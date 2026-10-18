@@ -1,0 +1,9 @@
+# Original firmware and device data stay local.
+/private_dumps/
+__pycache__/
+*.pyc
+.ruff_cache/
+/node_modules/
+/test-results/
+/.venv/
+*.zip

@@ -1,0 +1,18 @@
+{
+  "name": "ddmy-x6-flasher",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test web-tests/*.test.js",
+    "test:ui": "node --test web-tests/ui/*.test.js",
+    "lint": "eslint app.js lib web-tests"
+  },
+  "dependencies": {
+    "fflate": "0.8.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0",
+    "playwright": "1.56.1"
+  }
+}

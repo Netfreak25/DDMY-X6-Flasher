@@ -1,0 +1,45 @@
+{
+  "model": "DDMY X6",
+  "chip": 2157,
+  "normal_usb_id": "VID_10D6&PID_1101",
+  "adfu_usb_id": "VID_10D6&PID_10D6",
+  "disk_size": 3835691008,
+  "nand_id": "2c68044aa9",
+  "lfi_size": 61657088,
+  "mbrec_size": 1024,
+  "brec_size": 201216,
+  "sector_size": 512,
+  "transfer_size": 16384,
+  "write_delay_ms": 25,
+  "usb_timeout_ms": 30000,
+  "mode_timeout_s": 90,
+  "boot_write_mapping_verified": false,
+  "protocol": {
+    "adfus_address": "0x118000",
+    "work_address": "0x11e000",
+    "nandinfo_address": "0x125400",
+    "driver_entry": "0x11e200",
+    "scan_result_size": "0x9c",
+    "mbrec_sector": "0x40000000",
+    "brec_sector": "0x46000000",
+    "lfi_sector": "0xc0000000",
+    "final_sector": "0xff000000",
+    "preserve_header_ranges": [[40, 56], [79, 128]],
+    "nandread": {
+      "code_address": "0x11e000",
+      "buffer_address": "0x11a000",
+      "args_address": "0x11fff0",
+      "nand_args_address": "0x100920"
+    }
+  },
+  "runtime_sha256": {
+    "actions_dump.exe": "216c407954916ec730b261d857c8bb95bfd429244fe1cbeb7f1da0bbc3c496d4",
+    "libusb-1.0.dll": "eddd25df84b078158f477dfce80b26500f91ecdb5af850581d2f5d09d6f21c26",
+    "adfus.bin": "df84c595ea780400df1ceefe10a108e1a0d0d0740cdfdee6adc6d6233205863e",
+    "fwsc.bin": "6b6d2534609ddee4640fcd98bcdc6fe7bd45d1059bc59cbf47a3f6940de295bd",
+    "nandhwsc.bin": "e24e398202d4a214fa1043948b93c66f141ca5ebb84df56d7dd1892f42ca1956",
+    "nandinfo.bin": "fca20e842e9596df94b140957b88859e71af2350a004f7d121a42d0aa2f8e796",
+    "nandread.bin": "56ac350c20158e617bb011cc2b09dfedaa7ffc1892f97df9c357b623bac661b2",
+    "vram_last.bin": "96979aabd1efa078330229b83fe94760056e4c263db747317686de7610137d8f"
+  }
+}

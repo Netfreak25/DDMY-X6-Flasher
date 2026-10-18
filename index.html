@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>DDMY X6 - Flasher</title>
+  <meta name="description" content="DDMY X6 sichern, Firmware vergleichen und per WebUSB flashen. Dateien bleiben auf deinem Rechner.">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="assets/x6-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="./" aria-label="DDMY X6 Flasher Startseite"><span class="brand-mark">X6</span><span>Flasher</span></a><span class="local-badge"><span></span> Dateien bleiben auf deinem PC</span></header>
+  <main>
+    <section class="intro"><p class="eyebrow">DDMY X6</p><h1>Firmware &amp; Sicherungen</h1><p>Dein Player, deine Dateien. Sichern, vergleichen und aktualisieren.</p></section>
+    <section id="setup-note" class="setup-note" aria-label="Windows-Helfer einrichten">
+      <div><h2>Windows-App starten</h2><p>ZIP entpacken und <strong>DDMY X6 Helper.exe</strong> öffnen. Der Helfer verbindet diese Website mit deinem PC. Benötigt werden Windows und Chrome/Edge. Die generischen Flash-Hilfsdateien sind im Helfer enthalten.</p></div>
+      <a id="helper-download" class="file-button" href="https://github.com/Netfreak25/DDMY-X6-Flasher/releases">Windows-Helfer herunterladen ↗</a>
+    </section>
+    <section class="device-panel" aria-labelledby="device-heading">
+      <div class="player-symbol" aria-hidden="true"><span>X6</span><i></i></div>
+      <div class="device-info"><div class="device-heading"><h2 id="device-heading">Dein X6</h2><span id="device-badge" class="badge">Nicht verbunden</span></div><p id="device-description">Schließe den Player an und verbinde ihn mit dem Toolkit.</p></div>
+      <div class="device-actions"><button id="connect" class="primary" data-control>Verbinden <span aria-hidden="true">↗</span></button><button id="restart" class="quiet" data-control hidden>Player starten</button></div>
+    </section>
+
+    <section class="file-panel" aria-labelledby="file-heading">
+      <div class="file-icon" aria-hidden="true">↓</div><div class="file-info"><h2 id="file-heading">Firmware auswählen</h2><p id="firmware-info">Eine X6-Firmware im .bin-Format laden, um sie zu flashen oder zu vergleichen.</p></div>
+      <label class="file-button">Datei auswählen<input id="firmware-file" type="file" accept=".bin" data-control></label>
+    </section>
+
+    <section class="actions-grid" aria-label="Aktionen">
+      <article class="action-card"><span class="card-icon" aria-hidden="true">↧</span><h2>Sicherung erstellen</h2><p>Bootdatensätze und Firmware gemeinsam sichern. Musik und SD-Karte bleiben unberührt.</p><button id="dump" class="secondary" data-control disabled>Sicherung erstellen <span aria-hidden="true">→</span></button><small>Full-Dump · ungefähr 62 MB</small></article>
+      <article class="action-card"><span class="card-icon" aria-hidden="true">↶</span><h2>Sicherung wiederherstellen</h2><p>Eine vollständige Sicherung laden und Bootdatensätze samt Firmware zurückspielen.</p><div class="backup-picker"><label class="text-button">ZIP auswählen<input id="backup-file" type="file" accept=".zip" data-control></label><span>oder</span><label class="text-button">Ordner öffnen<input id="backup-folder" type="file" webkitdirectory multiple data-control></label></div><button id="restore" class="secondary" data-control disabled>Wiederherstellen <span aria-hidden="true">→</span></button><small id="backup-info">Noch keine Sicherung ausgewählt</small></article>
+      <article class="action-card"><span class="card-icon" aria-hidden="true">↑</span><h2>Firmware flashen · LFI</h2><p>Eine Teilaktualisierung der Hauptfirmware installieren. Das aktuelle Image wird vorher gesichert und das neue vollständig zurückgelesen.</p><button id="flash" class="primary" data-control disabled>Firmware flashen <span aria-hidden="true">→</span></button><small>Komplette Firmware mit BREC: vollständiges Paket wiederherstellen.</small></article>
+      <article class="action-card"><span class="card-icon" aria-hidden="true">⇄</span><h2>Mit Gerät vergleichen</h2><p>Die ausgewählte Firmware Byte für Byte mit dem Inhalt deines Players vergleichen.</p><button id="verify" class="secondary" data-control disabled>Vergleichen <span aria-hidden="true">→</span></button><small>Kein Schreiben in den Flash</small></article>
+    </section>
+
+    <section id="activity" class="activity" aria-labelledby="activity-heading" aria-live="polite">
+      <div class="activity-top"><div><p class="eyebrow">AKTUELLER VORGANG</p><h2 id="activity-heading">Bereit, wenn du es bist.</h2></div><span id="progress-text"></span></div>
+      <progress id="progress" max="100" value="0" hidden aria-label="Fortschritt"></progress>
+      <p id="activity-message">Wähle eine Aktion. Deine Dateien werden nicht ins Internet übertragen.</p>
+      <button id="save-pending" class="secondary" hidden>Gelesene Sicherung speichern</button>
+      <details id="details"><summary>Details</summary><pre id="report">Noch kein Vorgang gestartet.</pre><button id="save-report" class="text-button">Bericht speichern</button></details>
+    </section>
+    <footer><a id="repository-link" href="https://github.com/Netfreak25/DDMY-X6-Flasher">Projekt &amp; Anleitung ↗</a><span>Windows · Chrome / Edge · WebUSB</span></footer>
+  </main>
+  <dialog id="confirmation"><form method="dialog"><p class="eyebrow">BITTE BESTÄTIGEN</p><h2 id="confirm-title"></h2><p id="confirm-description"></p><label id="emergency-option" class="emergency" hidden><input id="emergency-check" type="checkbox">Notfall-Wiederherstellung aktivieren</label><div class="dialog-actions"><button value="cancel" class="secondary">Abbrechen</button><button id="confirm-go" value="confirm" class="primary">Starten</button></div></form></dialog>
+</body>
+</html>
