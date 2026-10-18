@@ -39,8 +39,27 @@ Wenn Windows beim Wechsel Zugriff verweigert, die App schließen und über
 **Als Administrator ausführen** erneut starten. Bei mehreren passenden
 Playern bricht die Auswahl ab; bitte nur einen X6 anschließen.
 
-Die Startseite und die App selbst senden keine Geräteabfrage. Erst die
-Schaltfläche **Verbinden** beginnt den Zugriff.
+Die Startseite und die App selbst senden beim Öffnen keine Geräteabfrage.
+Erst **Verbinden** oder der native Button **ADFU verlassen** beginnt den Zugriff.
+
+## ADFU direkt in der App verlassen
+
+Ab **Beta 4** lässt sich der Player auch ohne Website starten:
+
+1. Den X6 per USB anschließen und die Windows-App öffnen.
+2. Falls der Browser noch mit dem Player verbunden ist, dort **Trennen** wählen.
+   Einen laufenden Schreib- oder Lesevorgang zuerst fertigstellen lassen.
+3. Im App-Fenster **ADFU verlassen** anklicken und das Ergebnis abwarten.
+
+Die App verwendet den enthaltenen ADFUS-RAM-Helfer und sendet einen Reset.
+Es wird keine Firmware im Flash verändert. Die Erfolgsmeldung setzt voraus,
+dass der X6 anschließend als normaler USB-Player erkannt wurde. Ist er bereits
+im Normalmodus, wird kein Reset gesendet.
+
+Bei belegtem USB-Zugriff, fehlender Antwort oder unbestätigtem Reset erscheint
+eine Fehlermeldung. Es gibt keinen automatischen Wiederholungsversuch und keine
+Erfolgsmeldung allein aufgrund eines gesendeten Befehls. Ein hängendes Gerät
+kann weiterhin einen physischen Reset benötigen.
 
 ## Sichern und Vergleichen
 

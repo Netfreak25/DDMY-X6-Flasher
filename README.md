@@ -17,6 +17,7 @@ Firmware sichern, vergleichen und zurückspielen – direkt im Browser.
 | Sicherung wiederherstellen | Vollständige ZIP-Sicherungen oder vorhandene Toolkit-Sicherungsordner prüfen und zurückschreiben. |
 | LFI-Teilaktualisierung | Eine passende LFI-`.bin` prüfen, den bisherigen Inhalt lokal sichern, schreiben und vollständig zurücklesen. |
 | Mit Gerät vergleichen | Die ausgewählte `.bin` mit dem gesamten Firmwarebereich vergleichen und abweichende Bytes zählen. |
+| ADFU verlassen | Den Player direkt im Windows-Helper neu starten, ohne Website oder Browser-Verbindung. |
 
 „Full“ umfasst **Bootdatensätze und Firmware**, ungefähr 62 MB. Musikdateien,
 der übrige NAND-Inhalt und die SD-Karte gehören nicht zur Sicherung.
@@ -46,6 +47,11 @@ Ab **Beta 3** belegt die App ihren lokalen Port exklusiv. Läuft bereits ein
 Helper oder alter X6-Webstarter auf diesem Port, wird der zweite Start mit
 einer verständlichen Meldung beendet.
 
+Ab **Beta 4** gibt es **ADFU verlassen** direkt im App-Fenster. Der Button
+startet einen antwortenden ADFU-X6 neu und bestätigt dessen Rückkehr erst nach
+Erkennung im Normalmodus. Eine bestehende USB-Verbindung im Flasher vorher
+über **Trennen** freigeben. Der Button verändert keine Firmware im Flash.
+
 Voraussetzungen: Windows 10/11 (64 Bit), Chrome oder Edge und WinUSB für das
 ADFU-Gerät `10D6:10D6`. Der normale USB-Massenspeichertreiber bleibt bestehen.
 Bei einem Windows-Zugriffsfehler während des ADFU-Wechsels die App schließen
@@ -53,7 +59,7 @@ und über **Als Administrator ausführen** neu starten.
 
 ## Wie es arbeitet
 
-Die Website wird über GitHub Pages geladen. Die lokale Windows-App stellt nur
+Die Website wird über GitHub Pages geladen. Die lokale Windows-App stellt
 Geräteerkennung, den Windows-SCSI-Wechsel nach ADFU und sechs hashgeprüfte,
 generische RAM-Hilfsprogramme bereit. Boot- und Firmwaredaten überträgt der
 Browser **direkt per WebUSB** zum Player und zurück.
@@ -68,6 +74,9 @@ der Schlüssel wird nicht an GitHub übertragen. Chrome kann die Erlaubnis für
 den Zugriff auf andere Apps auf diesem Gerät abfragen.
 
 Beim bloßen Öffnen der Seite oder App wird der Player **nicht abgefragt**.
+Der native Button **ADFU verlassen** verwendet Windows-WinUSB direkt, prüft
+den ADFUS-Helfer im RAM, lädt ihn bei Bedarf und sendet den Reset-Befehl.
+Er benötigt keine Website, keine zusätzlichen Binärdateien und schreibt kein NAND.
 Firmware, Backups und Berichte bleiben auf dem eigenen Rechner. Es gibt keine
 Upload-Funktion, Cloud-Sicherung oder Telemetrie.
 
@@ -107,7 +116,7 @@ des Eigentümers veröffentlicht; die abgebildete Firmware ist nicht enthalten.*
 
 **Beta / unverifizierter Build-Kandidat:** Protokoll, Dateiabläufe und Oberfläche
 sind automatisiert mit simuliertem USB und künstlichen Testdaten geprüft. Der
-neue Browserweg ist noch nicht am X6 auf Hardware bestätigt. Die bisherige
+neue Browserweg und der native Reset-Button sind noch nicht am X6 auf Hardware bestätigt. Die bisherige
 native Flash-Routine wurde als Grundlage übernommen.
 
 Full Restore bleibt eine ausdrücklich zu bestätigende **Notfall-Wiederherstellung**:
@@ -134,7 +143,7 @@ python tools/build_helper.py
 ```
 
 Der Build startet anschließend die erzeugte EXE in einem hardwarefreien
-Selbsttest. Dieser prüft die mitgelieferten Hilfsdateien, Fenstericons und
+Selbsttest. Dieser prüft die mitgelieferten Hilfsdateien, Fenstericons, den Reset-Button und
 die tatsächlichen HTTP-Antworten für CORS-Vorabfrage und Sitzungskopplung.
 
 Die Build-Ausgabe bleibt unter dem ignorierten Verzeichnis `private_dumps/`.

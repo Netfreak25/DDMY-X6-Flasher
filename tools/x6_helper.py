@@ -7,6 +7,7 @@ import ctypes
 import http.client
 import json
 import os
+import queue
 import subprocess
 import threading
 import tkinter as tk
@@ -15,6 +16,7 @@ from pathlib import Path
 from tkinter import messagebox
 from urllib.parse import urlsplit
 
+import x6_reset
 import x6_toolkit as toolkit
 import x6_web as web
 
@@ -23,6 +25,7 @@ BACKGROUND = "#f3f8f6"
 INK = "#173b36"
 TEAL = "#147d6c"
 HTTP_SELF_TEST_TIMEOUT_S = 5
+UI_POLL_MS = 100
 
 
 def check_http_bridge(server: web.WebServer) -> dict[str, int]:
@@ -57,10 +60,12 @@ class HelperWindow:
     def __init__(self, root: tk.Tk, server: web.WebServer) -> None:
         self.root = root
         self.server = server
+        self.reset_running = False
+        self.reset_results = queue.SimpleQueue()
         self.thread = threading.Thread(target=server.serve_forever, daemon=True)
         self.thread.start()
         root.title("DDMY X6 · Flasher")
-        root.geometry("500x360")
+        root.geometry("500x440")
         root.resizable(False, False)
         root.configure(background=BACKGROUND)
         self.icon = tk.PhotoImage(file=str(toolkit.ROOT / "assets" / "x6-icon.png"))
@@ -76,10 +81,12 @@ class HelperWindow:
         text.pack(side="left")
         tk.Label(text, text="DDMY X6", font=("Segoe UI", 21, "bold"), fg=INK, bg=BACKGROUND).pack(anchor="w")
         tk.Label(text, text=f"Windows-Helfer · {server.version}", font=("Segoe UI", 11), fg="#607771", bg=BACKGROUND).pack(anchor="w")
-        tk.Label(panel, text="●  Bereit für den Flasher", font=("Segoe UI", 12, "bold"),
-                 fg=TEAL, bg=BACKGROUND).pack(anchor="w", pady=(25, 10))
+        self.status = tk.StringVar(value="●  Bereit für den Flasher")
+        tk.Label(panel, textvariable=self.status, font=("Segoe UI", 12, "bold"),
+                 fg=TEAL, bg=BACKGROUND, wraplength=440, justify="left").pack(anchor="w", pady=(25, 10))
         tk.Label(panel, text="Dieses Fenster während des Flashens geöffnet lassen.\n"
-                 "Deine Dateien bleiben auf deinem Rechner.\nDer Gerätezugriff beginnt erst im Flasher mit „Verbinden“.",
+                 "Deine Dateien bleiben auf deinem Rechner.\nGerätezugriff erst mit „Verbinden“ im Flasher\n"
+                 "oder hier mit „ADFU verlassen“.",
                  justify="left", font=("Segoe UI", 10), fg=INK, bg=BACKGROUND).pack(anchor="w")
         actions = tk.Frame(panel, bg=BACKGROUND)
         actions.pack(fill="x", pady=(25, 0))
@@ -89,6 +96,10 @@ class HelperWindow:
         tk.Button(actions, text="Offline öffnen", command=lambda: self.open_browser(False),
                   font=("Segoe UI", 10), bg=BACKGROUND, fg=TEAL, relief="flat", cursor="hand2",
                   padx=15, pady=10).pack(side="left", padx=(8, 0))
+        self.reset_button = tk.Button(panel, text="ADFU verlassen", command=self.leave_adfu,
+                                      font=("Segoe UI", 11, "bold"), bg="white", fg=TEAL,
+                                      activebackground="#e2efea", relief="flat", cursor="hand2", padx=20, pady=10)
+        self.reset_button.pack(anchor="w", pady=(15, 0))
         root.protocol("WM_DELETE_WINDOW", self.close)
 
     def open_browser(self, online: bool) -> None:
@@ -98,7 +109,47 @@ class HelperWindow:
         except (OSError, toolkit.ToolkitError) as error:
             messagebox.showerror("Browser öffnen", str(error), parent=self.root)
 
+    def leave_adfu(self) -> None:
+        """Run one native reset on demand; keep Tk responsive and prevent overlaps."""
+        if self.reset_running:
+            return
+        if not self.server.switch_lock.acquire(blocking=False):
+            messagebox.showinfo("X6 wird verwendet", "Ein ADFU-Wechsel läuft bereits. Bitte dessen Ende abwarten.", parent=self.root)
+            return
+        self.reset_running = True
+        self.reset_button.configure(state="disabled")
+        self.status.set("X6 wird neu gestartet …")
+        self.reset_worker = threading.Thread(target=self._reset_device, daemon=True)
+        self.reset_worker.start()
+        self.root.after(UI_POLL_MS, self._poll_reset)
+
+    def _reset_device(self) -> None:
+        """Only the worker touches USB; all widget updates stay on the Tk thread."""
+        try:
+            result = x6_reset.leave_adfu(self.server.profile, self.server.payload("adfus.bin"))
+            self.reset_results.put((True, result))
+        except Exception as error:  # noqa: BLE001 - deliver worker failures to the GUI, never discard them.
+            # Report unexpected worker errors too, so the UI never silently hangs.
+            self.reset_results.put((False, str(error)))
+        finally:
+            self.server.switch_lock.release()
+
+    def _poll_reset(self) -> None:
+        try:
+            success, message = self.reset_results.get_nowait()
+        except queue.Empty:
+            self.root.after(UI_POLL_MS, self._poll_reset)
+            return
+        self.reset_running = False
+        self.reset_button.configure(state="normal")
+        self.status.set(message if success else "Neustart nicht bestätigt")
+        if not success:
+            messagebox.showerror("ADFU verlassen", message, parent=self.root)
+
     def close(self) -> None:
+        if self.reset_running:
+            messagebox.showinfo("Neustart läuft", "Bitte das Ergebnis des laufenden Neustarts abwarten.", parent=self.root)
+            return
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
@@ -137,8 +188,10 @@ def main() -> None:
             user32.SendMessageW.restype = ctypes.c_ssize_t
             hwnd = user32.GetParent(root.winfo_id())
             icons = [bool(user32.SendMessageW(hwnd, 0x7F, size, 0)) for size in (0, 1)]
-            args.self_test.write_text(json.dumps({"ok": all(icons), "helpers": list(web.PAYLOAD_NAMES),
+            reset_button = window.reset_button.cget("text") == "ADFU verlassen" and window.reset_button.cget("state") == "normal"
+            args.self_test.write_text(json.dumps({"ok": all(icons) and reset_button, "helpers": list(web.PAYLOAD_NAMES),
                                                  "window_icons": icons, "http_pairing": http_checks,
+                                                 "reset_button": reset_button,
                                                  "device_access": False}), encoding="utf-8")
             window.close()
             return
