@@ -63,10 +63,12 @@ class WebBridgeTests(unittest.TestCase):
                 enter.assert_not_called()
 
     def test_only_existing_adfu_switch_is_exposed(self):
+        token = json.loads(self.request("/api/jobs/acquire", "POST")[1])["job"]
         with mock.patch.object(toolkit, "enter_adfu", return_value=toolkit.Device("adfu")) as enter:
-            status, data = self.request("/api/enter-adfu", "POST")
+            status, data = self.request("/api/enter-adfu", "POST", **{"X-X6-Job": token})
             self.assertEqual((status, json.loads(data)["mode"]), (200, "adfu"))
             enter.assert_called_once_with(self.server.profile)
+        self.request("/api/jobs/release", "POST", **{"X-X6-Job": token})
         self.assertEqual(self.request("/api/flash", "POST")[0], 404)
         self.assertEqual(self.request("/../private_dumps/toolkit/original/lfi.bin")[0], 404)
 
@@ -79,13 +81,27 @@ class WebBridgeTests(unittest.TestCase):
     def test_opening_page_and_profile_does_not_probe_any_device(self):
         """Opening the UI is passive; device discovery needs the Connect action."""
         with mock.patch.object(toolkit, "probe_device") as probe:
-            self.assertEqual(self.request("/")[0], 200)
+            for path in ("/", "/index.html", "/app.js", "/styles.css", "/lib/driver.js"):
+                self.assertEqual(self.request(path)[0], 404)
             self.assertEqual(self.request("/api/profile")[0], 200)
             probe.assert_not_called()
         with mock.patch.object(toolkit, "probe_device", return_value=toolkit.Device("missing")) as probe:
-            status, data = self.request("/api/status")
+            token = json.loads(self.request("/api/jobs/acquire", "POST")[1])["job"]
+            status, data = self.request("/api/status", **{"X-X6-Job": token})
             self.assertEqual((status, json.loads(data)["mode"]), (200, "missing"))
             probe.assert_called_once_with(self.server.profile)
+            self.request("/api/jobs/release", "POST", **{"X-X6-Job": token})
+
+    def test_native_and_pages_jobs_are_mutually_exclusive(self):
+        with self.server.jobs.native(), mock.patch.object(toolkit, "probe_device") as probe:
+            self.assertEqual(self.request("/api/jobs/acquire", "POST")[0], 409)
+            self.assertEqual(self.request("/api/status")[0], 409)
+            probe.assert_not_called()
+        token = json.loads(self.request("/api/jobs/acquire", "POST")[1])["job"]
+        with self.assertRaises(toolkit.ToolkitError), self.server.jobs.native():
+            pass
+        self.assertEqual(self.request("/api/jobs/release", "POST", **{"X-X6-Job": "wrong"})[0], 409)
+        self.assertEqual(self.request("/api/jobs/release", "POST", **{"X-X6-Job": token})[0], 200)
 
     def test_pages_cors_is_opt_in_and_still_requires_a_token(self):
         origin = "https://netfreak25.github.io"

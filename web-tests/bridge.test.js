@@ -18,7 +18,7 @@ test('pairing rejects remote token destinations and missing sessions make no req
   for (const origin of ['https://evil.example', 'http://localhost', 'http://127.0.0.1:8765/path', 'http://user@127.0.0.1']) {
     assert.throws(() => sessionFromLocation(page(`#session=secret&bridge=${origin}`), storage()), /Ungültige/);
   }
-  await assert.rejects(bridgeRequest(null, 'status'), /Windows-Helfer/);
+  await assert.rejects(bridgeRequest(null, 'status'), /DDMY X6 Flasher/);
 });
 
 test('direct Pages pairing uses only the configured loopback and saves the returned session', async () => {

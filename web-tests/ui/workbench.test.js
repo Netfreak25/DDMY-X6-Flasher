@@ -49,6 +49,8 @@ async function pageFixture(bootMapping = profile.boot_write_mapping_verified) {
     const path = new URL(route.request().url()).pathname;
     apiCalls.push(path);
     if (path === '/api/pair') return route.fulfill({json: {origin: new URL(route.request().url()).origin, token: 'mock-session'}});
+    if (path === '/api/jobs/acquire') return route.fulfill({json: {job: 'test-job'}});
+    if (path.startsWith('/api/jobs/')) return route.fulfill({json: {ok: true}});
     if (path === '/api/profile') return route.fulfill({json: {...profile, boot_write_mapping_verified: bootMapping}});
     if (path === '/api/status') return route.fulfill({json: {mode, serial: 'X6TEST000001'}});
     if (path === '/api/enter-adfu') {mode = 'adfu'; return route.fulfill({json: {mode}});}
@@ -69,6 +71,7 @@ async function pageFixture(bootMapping = profile.boot_write_mapping_verified) {
     const file=async name=>new Uint8Array(await (await fetch('/test-file/'+name)).arrayBuffer());
     export class X6Driver{
       constructor(usb){this.usb=usb;}
+      async bootstrap(){}
       async flashDriver(){window.__calls.push('driver');}
       async readLfi(progress){window.__calls.push('read');await new Promise(r=>setTimeout(r,150));let data=await file('lfi.bin');progress?.(data.length,data.length);if(window.__mismatch)data[0]^=1;return data;}
       async readBoot(index){window.__calls.push('boot'+index);if(window.__badBoot&&index===0)throw Error('bad brec checksum');return index===0?{'mbrec.bin':await file('mbrec.bin'),'brec0.bin':await file('brec0.bin')}:{'mbrec_copy.bin':await file('mbrec_copy.bin'),'brec1.bin':await file('brec1.bin')};}
@@ -134,6 +137,8 @@ for (const helperAvailable of [false, true]) test(`direct Pages click with helpe
       helperRequests.push(path);
       if (!helperAvailable) return route.abort('connectionrefused');
       if (path === '/api/pair') return route.fulfill({json: {origin: 'http://127.0.0.1:8765', token: 'direct-session'}});
+      if (path === '/api/jobs/acquire') return route.fulfill({json: {job: 'test-job'}});
+      if (path.startsWith('/api/jobs/')) return route.fulfill({json: {ok: true}});
       if (path === '/api/status') return route.fulfill({json: {mode: 'adfu'}});
       unexpected.push(url);
       return route.abort();
@@ -164,7 +169,7 @@ for (const helperAvailable of [false, true]) test(`direct Pages click with helpe
   await page.locator('#connect').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vorgang gestoppt');
   if (helperAvailable) {
-    assert.deepEqual(helperRequests, ['/api/pair', '/api/status']);
+    assert.deepEqual(helperRequests, ['/api/pair', '/api/jobs/acquire', '/api/status', '/api/jobs/release']);
     assert.deepEqual(await page.evaluate(() => window.__usbCalls), [
       {method: 'getDevices'},
       {method: 'requestDevice', active: true, options: {filters: [{vendorId: 0x10d6, productId: 0x10d6}]}},
@@ -193,6 +198,29 @@ test('connect, valid file selection, comparison and disabled concurrent actions'
   await page.locator('#verify').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Firmware weicht ab.');
   assert.match(await page.locator('#activity-message').textContent(), /1 Bytes/);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('native ownership blocks Pages before device discovery', async () => {
+  const {page, context, errors, apiCalls} = await pageFixture();
+  await page.route('**/api/jobs/acquire', route => route.fulfill({status: 409, json: {error: 'Windows-App verwendet den X6.'}}));
+  await page.locator('#connect').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vorgang gestoppt');
+  assert.match(await page.locator('#activity-message').textContent(), /Windows-App verwendet/);
+  assert.equal(apiCalls.includes('/api/status'), false);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('disconnect closes WebUSB even when the helper has lost its lease', async () => {
+  const {page, context, errors} = await pageFixture();
+  await connect(page);
+  await page.route('**/api/jobs/check', route => route.fulfill({status: 409, json: {error: 'Sitzung verloren'}}));
+  await page.route('**/api/jobs/release', route => route.fulfill({status: 409, json: {error: 'Sitzung verloren'}}));
+  await page.locator('#connect').click();
+  await page.waitForFunction(() => document.querySelector('#device-badge').textContent === 'Getrennt');
+  assert.equal(await page.locator('#dump').isDisabled(), true);
   assert.deepEqual(errors, []);
   await context.close();
 });

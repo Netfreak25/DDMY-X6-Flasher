@@ -18,6 +18,7 @@ from typing import Any
 import x6_lfi
 import x6_spti
 from x6_brec_transfer import prepare_transfer
+from x6_process import run_streamed
 
 ROOT = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
 PRIVATE_ROOT = ROOT / "private_dumps"
@@ -27,6 +28,17 @@ DEFAULT_RUNTIME = PRIVATE_ROOT / "toolkit" / "runtime"
 RUN_ROOT = PRIVATE_ROOT / "toolkit" / "runs"
 BINDING_PATH = PRIVATE_ROOT / "toolkit" / "device.json"
 BUNDLE_FILES = ("mbrec.bin", "mbrec_copy.bin", "brec0.bin", "brec1.bin", "lfi.bin")
+
+
+def use_desktop_workspace() -> None:
+    """Keep writable desktop data outside the executable extraction directory."""
+    global PRIVATE_ROOT, RUN_ROOT, BINDING_PATH, DEFAULT_RUNTIME
+    if getattr(sys, "frozen", False):
+        DEFAULT_RUNTIME = ROOT / "runtime"
+    PRIVATE_ROOT = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "DDMY-X6-Flasher" / "private_dumps"
+    RUN_ROOT = PRIVATE_ROOT / "toolkit" / "runs"
+    BINDING_PATH = PRIVATE_ROOT / "toolkit" / "device.json"
+    PRIVATE_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 class ToolkitError(RuntimeError):
@@ -193,16 +205,19 @@ def enter_adfu(profile: Profile) -> Device:
 class RunLog:
     """Persist each step and its complete backend transcript privately."""
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, notify=None) -> None:
         self.directory = private_path(directory)
         self.directory.mkdir(parents=True, exist_ok=False)
         self.events = self.directory / "events.jsonl"
+        self.notify = notify
 
     def event(self, event_type: str, **values: object) -> None:
         """Append an event before or after a device operation."""
         entry = {"time": datetime.now(timezone.utc).isoformat(), "event": event_type, **values}
         with self.events.open("a", encoding="utf-8") as output:
             output.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        if self.notify:
+            self.notify(entry)
 
     def transcript(self, name: str, content: str) -> None:
         """Save one untruncated backend response."""
@@ -220,8 +235,9 @@ class ActionsBackend:
 
     def __init__(self, profile: Profile, runtime: Path, log: RunLog) -> None:
         self.profile = profile
-        self.runtime = private_path(runtime)
+        self.runtime = runtime.resolve()
         self.log = log
+        self.failed = False
         for name, expected in profile.runtime_sha256.items():
             path = self.runtime / name
             if not path.is_file():
@@ -238,6 +254,8 @@ class ActionsBackend:
 
     def run(self, name: str, *args: str, timeout_s: int = 90, write: bool = False) -> str:
         """Run once and stop on timeout, backend error, or USB status error."""
+        if self.failed:
+            raise ToolkitError("USB session stopped after an uncertain response; no further commands permitted")
         command = [
             str(self.file("actions_dump.exe")),
             "chip", str(self.profile.chip),
@@ -248,23 +266,32 @@ class ActionsBackend:
             env["ACTIONS_FLASH_DELAY_MS"] = str(self.profile.write_delay_ms)
         self.log.event("command_start", name=name, args=list(args), write=write)
         try:
-            result = subprocess.run(
-                command, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=timeout_s, env=env, check=False,
-            )
+            if self.log.notify:
+                result = run_streamed(command, env, timeout_s, lambda line: self.log.event("backend_output", name=name, line=line))
+            else:
+                result = subprocess.run(
+                    command, capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=timeout_s, env=env, check=False,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
         except subprocess.TimeoutExpired as exc:
+            self.failed = True
+            self.log.transcript(name, (exc.output or b"").decode("utf-8", errors="replace") if isinstance(exc.output, bytes) else (exc.output or ""))
             self.log.event("command_timeout", name=name, timeout_s=timeout_s)
             raise ToolkitError(f"{name}: backend timed out; device state is uncertain") from exc
         output = result.stdout + result.stderr
         self.log.transcript(name, output)
         self.log.event("command_end", name=name, exit_code=result.returncode)
         failure = re.search(
-            r"unexpected status|bad brec checksum|unexpected brec size|"
+            r"unexpected status|unexpected response|bad brec checksum|unexpected brec size|"
             r"unsupported mbrec size|(?:^|\s)(?:failed|error)(?:\s|:|$)",
             output,
             re.IGNORECASE,
         )
         if result.returncode or failure:
+            # A checksum warning describes returned data; transport errors end
+            # the session and prohibit every subsequent command.
+            self.failed = bool(result.returncode or re.search(r"unexpected status|unexpected response|failed|error", output, re.IGNORECASE))
             raise ToolkitError(f"{name}: backend failed (exit {result.returncode}); see {self.log.directory}")
         return output
 
@@ -286,13 +313,18 @@ def result_bytes(output: str) -> bytes:
 
 
 def start_adfus(backend: ActionsBackend) -> None:
-    """Verify the ATJ2157 ROM and the first 512 loaded ADFUS bytes."""
+    """Reuse verified ADFUS RAM before trying the ROM-only INFO command."""
+    address = backend.profile.protocol["adfus_address"]
+    probe = backend.log.directory / "adfus_probe.bin"
+    expected = backend.file("adfus.bin").read_bytes()[:backend.profile.sector_size]
+    backend.run("adfus_existing", "read_mem", address, hex(backend.profile.sector_size), str(probe))
+    if probe.read_bytes() == expected:
+        backend.log.event("adfus_reused")
+        return
     info = result_bytes(backend.run("adfu_info", "adfu_info"))
     if not info.startswith(b"\x00CADFUD0Q"):
         raise ToolkitError(f"unexpected ADFU ROM identity: {info.hex()}")
-    address = backend.profile.protocol["adfus_address"]
     backend.run("adfus_start", "simple_switch", address, str(backend.file("adfus.bin")))
-    probe = backend.log.directory / "adfus_probe.bin"
     backend.run("adfus_probe", "read_mem", address, hex(backend.profile.sector_size), str(probe))
     if probe.read_bytes() != backend.file("adfus.bin").read_bytes()[:backend.profile.sector_size]:
         raise ToolkitError("ADFUS RAM probe differs from the loaded payload")
@@ -345,13 +377,15 @@ def validate_boot(path: Path, kind: str, profile: Profile) -> dict[str, object]:
     return {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 
 
-def read_lfi(backend: ActionsBackend, path: Path, name: str) -> dict[str, object]:
+def read_lfi(backend: ActionsBackend, path: Path, name: str, *, validate: bool = True) -> dict[str, object]:
     """Read and validate the complete logical firmware area."""
     backend.run(
         name, "blk_size", hex(backend.profile.transfer_size), "read_lfi",
         "0", hex(backend.profile.lfi_size), str(path), timeout_s=900,
     )
-    result = validate_lfi(path, backend.profile)
+    if path.stat().st_size != backend.profile.lfi_size:
+        raise ToolkitError("incomplete LFI read")
+    result = validate_lfi(path, backend.profile) if validate else {"size": path.stat().st_size, "sha256": sha256_file(path)}
     backend.log.event("file_read", name=path.name, **result)
     return result
 

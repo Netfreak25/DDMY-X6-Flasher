@@ -1,4 +1,4 @@
-"""Small Windows GUI for the local X6 app; starting it never probes hardware."""
+"""Standalone Windows flasher; optional API bridge for GitHub Pages."""
 
 from __future__ import annotations
 
@@ -8,52 +8,48 @@ import http.client
 import json
 import os
 import queue
+import re
 import subprocess
 import threading
 import tkinter as tk
 from ctypes import wintypes
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import filedialog, messagebox, ttk
 from urllib.parse import urlsplit
 
 import x6_poweroff
-import x6_reset
 import x6_toolkit as toolkit
 import x6_web as web
+from x6_jobs import DeviceJobs
+from x6_native import NativeOperations
 
-APP_ID = "Netfreak25.DDMYX6.Flasher.Helper"
+APP_ID = "Netfreak25.DDMYX6.Flasher"
 BACKGROUND = "#f3f8f6"
 INK = "#173b36"
 TEAL = "#147d6c"
 HTTP_SELF_TEST_TIMEOUT_S = 5
 UI_POLL_MS = 100
-DEVICE_ACTIONS = {
-    "enter": ("ADFU betreten", "X6 wechselt nach ADFU …", "ADFU-Wechsel nicht bestätigt"),
-    "leave": ("ADFU verlassen", "X6 wird neu gestartet …", "Neustart nicht bestätigt"),
-    "poweroff": ("Player ausschalten", "Ausschaltcode wird geladen und geprüft …", "Ausschaltaufruf nicht bestätigt"),
-}
 
 
 def check_http_bridge(server: web.WebServer) -> dict[str, int]:
-    """Exercise packaged HTTP preflight and pairing without accessing any USB API."""
+    """Exercise actual HTTP pairing without querying or opening USB hardware."""
     site = urlsplit(server.pages_url)
     origin = f"{site.scheme}://{site.netloc}"
     checks = {}
-    requests = (
+    for method, headers, expected, label in (
         ("OPTIONS", {"Origin": origin, "Access-Control-Request-Method": "POST",
                      "Access-Control-Request-Headers": "x-x6-pair"}, 204, "preflight_status"),
         ("POST", {"Origin": origin, "X-X6-Pair": "1"}, 200, "pair_status"),
-    )
-    for method, headers, expected_status, label in requests:
+    ):
         connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=HTTP_SELF_TEST_TIMEOUT_S)
         try:
             connection.request(method, "/api/pair", headers=headers)
             response = connection.getresponse()
             body = response.read()
-            if response.status != expected_status or response.getheader("Access-Control-Allow-Origin") != origin:
-                raise toolkit.ToolkitError(f"HTTP-Selbsttest fehlgeschlagen: {method} /api/pair, Status {response.status}.")
+            if response.status != expected or response.getheader("Access-Control-Allow-Origin") != origin:
+                raise toolkit.ToolkitError(f"HTTP-Selbsttest fehlgeschlagen: {method}, Status {response.status}.")
             if method == "POST" and json.loads(body) != {"origin": server.origin, "token": server.token}:
-                raise toolkit.ToolkitError("HTTP-Selbsttest: unpassende lokale Sitzung.")
+                raise toolkit.ToolkitError("HTTP-Selbsttest: unpassende Sitzung.")
             checks[label] = response.status
         finally:
             connection.close()
@@ -61,201 +57,399 @@ def check_http_bridge(server: web.WebServer) -> dict[str, int]:
 
 
 class HelperWindow:
-    """Own the app lifetime and present its launch/stop controls."""
+    """All widgets stay on the Tk thread; one worker owns each complete job."""
 
-    def __init__(self, root: tk.Tk, server: web.WebServer) -> None:
-        self.root = root
-        self.server = server
-        self.switch_running = False
-        self.switch_results = queue.SimpleQueue()
-        self.thread = threading.Thread(target=server.serve_forever, daemon=True)
-        self.thread.start()
+    def __init__(self, root: tk.Tk, profile: toolkit.Profile, runtime: Path, jobs: DeviceJobs,
+                 server: web.WebServer | None = None, bridge_error: str = "") -> None:
+        self.root, self.server, self.jobs = root, server, jobs
+        self.events = queue.SimpleQueue()
+        self.operations = NativeOperations(profile, runtime, self.events.put)
+        self.busy = False
+        self.connected = False
+        self.report = []
+        self.controls = []
+        self.device_controls = []
+        self.thread = None
+        self.poll_id = None
+        if server:
+            self.thread = threading.Thread(target=server.serve_forever, daemon=True)
+            self.thread.start()
         root.title("DDMY X6 · Flasher")
-        root.geometry("500x540")
-        root.resizable(False, False)
+        root.geometry("780x780")
+        root.minsize(720, 760)
         root.configure(background=BACKGROUND)
-        self.icon = tk.PhotoImage(file=str(toolkit.ROOT / "assets" / "x6-icon.png"))
+        self.icon = tk.PhotoImage(file=str(toolkit.ROOT / "assets/x6-icon.png"))
         root.iconphoto(True, self.icon)
-        root.iconbitmap(str(toolkit.ROOT / "assets" / "x6-icon.ico"))
-        panel = tk.Frame(root, bg=BACKGROUND, padx=30, pady=26)
+        root.iconbitmap(str(toolkit.ROOT / "assets/x6-icon.ico"))
+        style = ttk.Style(root)
+        style.theme_use("clam")
+        style.configure("TProgressbar", background=TEAL, troughcolor="#dceae5", borderwidth=0)
+        panel = tk.Frame(root, bg=BACKGROUND, padx=26, pady=18)
         panel.pack(fill="both", expand=True)
         top = tk.Frame(panel, bg=BACKGROUND)
         top.pack(fill="x")
         self.logo = self.icon.subsample(4)
-        tk.Label(top, image=self.logo, bg=BACKGROUND).pack(side="left", padx=(0, 16))
-        text = tk.Frame(top, bg=BACKGROUND)
-        text.pack(side="left")
-        tk.Label(text, text="DDMY X6", font=("Segoe UI", 21, "bold"), fg=INK, bg=BACKGROUND).pack(anchor="w")
-        tk.Label(text, text=f"Windows-Helfer · {server.version}", font=("Segoe UI", 11), fg="#607771", bg=BACKGROUND).pack(anchor="w")
-        self.status = tk.StringVar(value="●  Bereit für den Flasher")
-        tk.Label(panel, textvariable=self.status, font=("Segoe UI", 12, "bold"),
-                 fg=TEAL, bg=BACKGROUND, wraplength=440, justify="left").pack(anchor="w", pady=(25, 10))
-        tk.Label(panel, text="Dieses Fenster während des Flashens geöffnet lassen.\n"
-                 "Deine Dateien bleiben auf deinem Rechner.\nGerätezugriff erst mit „Verbinden“ im Flasher\n"
-                 "oder mit den Geräteaktionen in dieser App.",
-                 justify="left", font=("Segoe UI", 10), fg=INK, bg=BACKGROUND).pack(anchor="w")
-        actions = tk.Frame(panel, bg=BACKGROUND)
-        actions.pack(fill="x", pady=(25, 0))
-        tk.Button(actions, text="Flasher öffnen  ↗", command=lambda: self.open_browser(True),
-                  font=("Segoe UI", 11, "bold"), bg=TEAL, fg="white", activebackground="#106454",
-                  activeforeground="white", relief="flat", cursor="hand2", padx=20, pady=10).pack(side="left")
-        tk.Button(actions, text="Offline öffnen", command=lambda: self.open_browser(False),
-                  font=("Segoe UI", 10), bg=BACKGROUND, fg=TEAL, relief="flat", cursor="hand2",
-                  padx=15, pady=10).pack(side="left", padx=(8, 0))
+        tk.Label(top, image=self.logo, bg=BACKGROUND).pack(side="left", padx=(0, 14))
+        title = tk.Frame(top, bg=BACKGROUND)
+        title.pack(side="left")
+        tk.Label(title, text="DDMY X6", font=("Segoe UI", 22, "bold"), fg=INK, bg=BACKGROUND).pack(anchor="w")
+        site = json.loads(web.SITE_CONFIG.read_text(encoding="utf-8"))
+        self.label(title, f"Windows-Flasher · {site['version']}").pack(anchor="w")
+        self.connect_button = self.button(top, "Verbinden", self.toggle_connection, primary=True)
+        self.connect_button.pack(side="right")
+        self.status = tk.StringVar(value="Bereit · noch kein Gerätezugriff")
+        tk.Label(panel, textvariable=self.status, fg=TEAL, bg=BACKGROUND, font=("Segoe UI", 12, "bold"),
+                 anchor="w").pack(fill="x", pady=(14, 12))
+
+        self.firmware = tk.StringVar()
+        self.backup = tk.StringVar()
+        firmware = self.section(panel, "Firmware · LFI-Teilaktualisierung")
+        self.file_row(firmware, self.firmware, self.choose_firmware)
+        row = tk.Frame(firmware, bg="white")
+        row.pack(fill="x", pady=(6, 0))
+        self.flash_button = self.button(row, "Firmware flashen · LFI", self.flash, device=True)
+        self.flash_button.pack(side="left", padx=(0, 8))
+        self.compare_button = self.button(row, "Mit Gerät vergleichen", self.compare, device=True)
+        self.compare_button.pack(side="left")
+        self.label(firmware, "Einzelne .bin: nur LFI. Für BREC und das frühe Startbild: vollständige Sicherung.",
+                   background="white").pack(anchor="w", pady=(5, 0))
+
+        backup = self.section(panel, "Vollständige Sicherung")
+        self.file_row(backup, self.backup, self.choose_backup, self.choose_folder)
+        row = tk.Frame(backup, bg="white")
+        row.pack(fill="x", pady=(6, 0))
+        self.dump_button = self.button(row, "Sicherung erstellen", self.dump, device=True)
+        self.dump_button.pack(side="left", padx=(0, 8))
+        self.restore_button = self.button(row, "Sicherung wiederherstellen", self.restore, device=True)
+        self.restore_button.pack(side="left")
+        self.label(backup, "MBREC, beide Bootkopien und LFI · Musik und SD-Karte sind nicht enthalten.",
+                   background="white").pack(anchor="w", pady=(5, 0))
+
         modes = tk.Frame(panel, bg=BACKGROUND)
-        modes.pack(fill="x", pady=(15, 0))
-        self.enter_button = tk.Button(modes, text="ADFU betreten", command=self.enter_adfu,
-                                      font=("Segoe UI", 11, "bold"), bg="white", fg=TEAL,
-                                      activebackground="#e2efea", relief="flat", cursor="hand2", padx=20, pady=10)
-        self.enter_button.pack(side="left", padx=(0, 10))
-        self.reset_button = tk.Button(modes, text="ADFU verlassen", command=self.leave_adfu,
-                                      font=("Segoe UI", 11, "bold"), bg="white", fg=TEAL,
-                                      activebackground="#e2efea", relief="flat", cursor="hand2", padx=20, pady=10)
-        self.reset_button.pack(side="left")
-        self.poweroff_button = tk.Button(panel, text="Player ausschalten", command=self.power_off,
-                                         font=("Segoe UI", 11, "bold"), bg="white", fg=INK,
-                                         activebackground="#e2efea", relief="flat", cursor="hand2", padx=20, pady=10)
-        self.poweroff_button.pack(anchor="w", pady=(15, 0))
-        tk.Label(panel, text="RAM-Funktion · Nach Startbestätigung USB abziehen.",
-                 font=("Segoe UI", 9), fg="#607771", bg=BACKGROUND).pack(anchor="w", pady=(6, 0))
+        modes.pack(fill="x", pady=(6, 0))
+        self.enter_button = self.button(modes, "ADFU betreten", lambda: self.mode("enter", "ADFU betreten"))
+        self.reset_button = self.button(modes, "ADFU verlassen", lambda: self.mode("leave", "ADFU verlassen"))
+        self.poweroff_button = self.button(modes, "Player ausschalten", lambda: self.mode("poweroff", "Player ausschalten"))
+        for button in (self.enter_button, self.reset_button, self.poweroff_button):
+            button.pack(side="left", padx=(0, 8))
+        self.label(panel, "Ausschalten: Nach Startbestätigung USB abziehen.").pack(anchor="w", pady=(4, 6))
+        self.activity = tk.StringVar(value="Wähle „Verbinden“, um den X6 zu erkennen.")
+        self.activity_label = tk.Label(panel, textvariable=self.activity, bg=BACKGROUND, fg=INK,
+                                      font=("Segoe UI", 11), wraplength=680, justify="left", anchor="w")
+        self.activity_label.pack(fill="x")
+        panel.bind("<Configure>", lambda event: self.activity_label.configure(wraplength=max(300, event.width - 52)))
+        self.progress = ttk.Progressbar(panel, mode="indeterminate")
+        self.progress.pack(fill="x", pady=(10, 4))
+        self.progress_text = tk.StringVar()
+        self.progress_label = tk.Label(panel, textvariable=self.progress_text, bg=BACKGROUND, fg=TEAL, font=("Segoe UI", 9))
+        self.progress_label.pack(anchor="w")
+        self.pending_button = self.button(panel, "Gelesene Sicherung speichern", self.save_pending)
+        bottom = tk.Frame(panel, bg=BACKGROUND)
+        bottom.pack(side="bottom", fill="x", pady=(10, 0), before=top)
+        self.button(bottom, "Details", self.details).pack(side="left")
+        self.button(bottom, "Bericht speichern", self.save_report).pack(side="left", padx=(8, 0))
+        self.online_button = self.button(bottom, "Online-Flasher öffnen ↗", self.open_browser)
+        self.online_button.pack(side="right")
+        if bridge_error:
+            self.report.append({"event": "bridge_unavailable", "error": bridge_error})
+            self.activity.set("Native App bereit. Online-Kopplung nicht verfügbar; siehe Details.")
         root.protocol("WM_DELETE_WINDOW", self.close)
+        self.update_controls()
 
-    def open_browser(self, online: bool) -> None:
-        """Open only the configured Pages URL or this instance's loopback site."""
+    @staticmethod
+    def label(parent, text: str, *, background=BACKGROUND):
+        return tk.Label(parent, text=text, bg=background, fg="#607771", font=("Segoe UI", 9), justify="left")
+
+    def section(self, parent, title: str):
+        frame = tk.Frame(parent, bg="white", padx=15, pady=8)
+        frame.pack(fill="x", pady=(0, 10))
+        tk.Label(frame, text=title, bg="white", fg=INK, font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 8))
+        return frame
+
+    def button(self, parent, text, command, *, primary=False, device=False):
+        button = tk.Button(parent, text=text, command=command, font=("Segoe UI", 10),
+                           bg=TEAL if primary else "#e3f0eb", fg="white" if primary else INK,
+                           activebackground="#cce6dd", relief="flat", cursor="hand2", padx=12, pady=7)
+        self.controls.append(button)
+        if device:
+            self.device_controls.append(button)
+        return button
+
+    def file_row(self, parent, variable, select, folder=None):
+        row = tk.Frame(parent, bg="white")
+        row.pack(fill="x")
+        ttk.Entry(row, textvariable=variable, state="readonly").pack(side="left", fill="x", expand=True, ipady=5)
+        self.button(row, "Datei wählen", select).pack(side="left", padx=(8, 0))
+        if folder:
+            self.button(row, "Ordner", folder).pack(side="left", padx=(8, 0))
+
+    def update_controls(self) -> None:
+        for button in self.controls:
+            button.configure(state="disabled" if self.busy else "normal")
+        for button in self.device_controls:
+            button.configure(state="normal" if self.connected and not self.busy else "disabled")
+        if not self.server:
+            self.online_button.configure(state="disabled")
+        self.connect_button.configure(text="Trennen" if self.connected else "Verbinden")
+        if self.operations.pending_backup:
+            self.progress.pack_forget()
+            self.progress_label.pack_forget()
+            self.pending_button.pack(anchor="w", pady=(5, 0))
+        else:
+            self.pending_button.pack_forget()
+            self.progress.pack(fill="x", pady=(10, 4))
+            self.progress_label.pack(anchor="w")
+
+    def choose_firmware(self):
+        selected = filedialog.askopenfilename(parent=self.root, title="X6-LFI auswählen", filetypes=[("X6-Firmware", "*.bin")])
+        if selected:
+            self.firmware.set(selected)
+
+    def choose_backup(self):
+        selected = filedialog.askopenfilename(parent=self.root, title="X6-Sicherung auswählen", filetypes=[("X6-Sicherung", "*.zip")])
+        if selected:
+            self.backup.set(selected)
+
+    def choose_folder(self):
+        selected = filedialog.askdirectory(parent=self.root, title="Toolkit-Sicherungsordner auswählen")
+        if selected:
+            self.backup.set(selected)
+
+    def toggle_connection(self):
+        if self.connected:
+            self.connected = False
+            self.operations.serial = None
+            self.status.set("Getrennt · Player bleibt gegebenenfalls in ADFU")
+            self.update_controls()
+        else:
+            self.start("Verbinden", self.operations.connect)
+
+    def dump(self):
+        destination = filedialog.asksaveasfilename(parent=self.root, title="Sicherung speichern", defaultextension=".x6backup.zip",
+                                                  initialfile="x6-sicherung.x6backup.zip", filetypes=[("X6-Sicherung", "*.zip")])
+        if destination:
+            self.start("Sicherung erstellen", lambda: self.operations.dump(Path(destination)))
+
+    def compare(self):
+        if not self.firmware.get():
+            self.choose_firmware()
+        if self.firmware.get():
+            image = Path(self.firmware.get())
+            self.start("Mit Gerät vergleichen", lambda: self.operations.compare(image))
+
+    def flash(self):
+        if not self.firmware.get():
+            self.choose_firmware()
+        if not self.firmware.get() or not messagebox.askokcancel("LFI flashen", "Nur das LFI aktualisieren?\n"
+                "Zuerst wird das bisherige LFI gespeichert; danach wird vollständig geschrieben und zurückgelesen.", parent=self.root):
+            return
+        destination = filedialog.asksaveasfilename(parent=self.root, title="Bisheriges LFI vor dem Flashen speichern",
+                                                  defaultextension=".bin", initialfile="x6-vor-flash.bin", filetypes=[("X6-LFI", "*.bin")])
+        if destination:
+            image = Path(self.firmware.get())
+            self.start("Firmware flashen · LFI", lambda: self.operations.flash(image, Path(destination)))
+
+    def restore(self):
+        if not self.backup.get():
+            self.choose_backup()
+        emergency = not self.operations.profile.boot_write_mapping_verified
+        title = "Notfall-Wiederherstellung" if emergency else "Full Restore"
+        description = "MBREC, beide BREC-Kopien und LFI durch diese Sicherung ersetzen und vollständig zurücklesen?"
+        if emergency:
+            description += "\nDer Boot-Schreibweg ist nicht freigegeben. Ohne Boot-Rücklesung bleibt das Ergebnis unverifiziert."
+        if self.backup.get() and messagebox.askokcancel(title, description, parent=self.root):
+            source = Path(self.backup.get())
+            self.start(title, lambda: self.operations.restore(source, emergency))
+
+    def mode(self, action, title):
+        self.start(title, lambda: self.operations.mode(action))
+
+    def save_pending(self):
+        source = self.operations.pending_backup
+        if source is None:
+            return
+        extension = ".x6backup.zip" if source.is_dir() else ".bin"
+        destination = filedialog.asksaveasfilename(parent=self.root, title="Gelesene Sicherung speichern",
+                                                  initialfile="x6-sicherung" + extension, defaultextension=extension)
+        if destination:
+            self.start("Sicherung speichern", lambda: self.operations.save_pending(Path(destination)))
+
+    def start(self, title: str, action) -> None:
+        """Acquire before spawning: double clicks cannot create competing workers."""
+        if self.busy:
+            return
         try:
-            subprocess.Popen([str(web.browser_path()), self.server.launch_url(online)])
-        except (OSError, toolkit.ToolkitError) as error:
-            messagebox.showerror("Browser öffnen", str(error), parent=self.root)
-
-    def enter_adfu(self) -> None:
-        """Use the existing Windows SCSI switch without opening a website."""
-        self._start_switch("enter")
-
-    def leave_adfu(self) -> None:
-        """Use the native WinUSB reset without opening a website."""
-        self._start_switch("leave")
-
-    def power_off(self) -> None:
-        """Load, verify and execute the RAM power-off routine on explicit click."""
-        self._start_switch("poweroff")
-
-    def _start_switch(self, action: str) -> None:
-        """Serialize all device buttons with each other and the web bridge switch."""
-        if self.switch_running:
+            token = self.jobs.acquire("Windows-App")
+        except toolkit.ToolkitError as error:
+            messagebox.showinfo("X6 wird verwendet", str(error), parent=self.root)
             return
-        if not self.server.switch_lock.acquire(blocking=False):
-            messagebox.showinfo("X6 wird verwendet", "Ein Geräteauftrag läuft bereits. Bitte dessen Ende abwarten.", parent=self.root)
-            return
-        self.switch_running = True
-        self.switch_title, progress, self.switch_error = DEVICE_ACTIONS[action]
-        for button in (self.enter_button, self.reset_button, self.poweroff_button):
-            button.configure(state="disabled")
-        self.status.set(progress)
-        self.switch_worker = threading.Thread(target=self._switch_device, args=(action,), daemon=True)
-        self.switch_worker.start()
-        self.root.after(UI_POLL_MS, self._poll_switch)
+        self.busy = True
+        self.report = [{"event": "start", "action": title}]
+        self.activity.set(title)
+        self.progress.configure(mode="indeterminate")
+        self.progress.start()
+        self.update_controls()
 
-    def _switch_device(self, action: str) -> None:
-        """Only the worker touches USB; all widget updates stay on the Tk thread."""
-        try:
-            if action == "enter":
-                device = toolkit.enter_adfu(self.server.profile)
-                if device.mode != "adfu":
-                    raise toolkit.ToolkitError("Der X6 wurde nicht im ADFU-Modus erkannt.")
-                result = "X6 im ADFU-Modus erkannt."
-            elif action == "poweroff":
-                result = x6_poweroff.power_off(self.server.profile, self.server.runtime)
-            else:
-                result = x6_reset.leave_adfu(self.server.profile, self.server.payload("adfus.bin"))
-            self.switch_results.put((True, result))
-        except Exception as error:  # noqa: BLE001 - deliver worker failures to the GUI, never discard them.
-            # Report unexpected worker errors too, so the UI never silently hangs.
-            self.switch_results.put((False, str(error)))
-        finally:
-            self.server.switch_lock.release()
+        def work():
+            try:
+                self.events.put({"event": "result", **action()})
+            except Exception as error:  # noqa: BLE001 - surface every worker failure, never retry.
+                event = {"event": "failure", "error": str(error), "type": type(error).__name__}
+                if self.operations.log:
+                    event["directory"] = str(self.operations.log.directory)
+                    try:
+                        self.operations.log.event("operation_failed", error=str(error))
+                    except OSError as log_error:
+                        event["log_error"] = str(log_error)
+                self.events.put(event)
+            finally:
+                self.jobs.release(token)
+                self.events.put({"event": "finished"})
 
-    def _poll_switch(self) -> None:
-        try:
-            success, message = self.switch_results.get_nowait()
-        except queue.Empty:
-            self.root.after(UI_POLL_MS, self._poll_switch)
-            return
-        self.switch_running = False
-        for button in (self.enter_button, self.reset_button, self.poweroff_button):
-            button.configure(state="normal")
-        self.status.set(message if success else self.switch_error)
-        if not success:
-            messagebox.showerror(self.switch_title, message, parent=self.root)
+        self.worker = threading.Thread(target=work, daemon=True)
+        self.worker.start()
+        self.poll_id = self.root.after(UI_POLL_MS, self.poll)
 
-    def close(self) -> None:
-        if self.switch_running:
-            messagebox.showinfo("Geräteauftrag läuft", "Bitte das Ergebnis des laufenden Geräteauftrags abwarten.", parent=self.root)
+    def poll(self):
+        self.poll_id = None
+        while True:
+            try:
+                event = self.events.get_nowait()
+            except queue.Empty:
+                break
+            self.report.append(event)
+            kind = event["event"]
+            if kind == "phase":
+                self.activity.set(event["label"])
+                self.progress.stop()
+                self.progress.configure(mode="indeterminate", value=0)
+                self.progress.start()
+                self.progress_text.set("")
+            elif kind == "backend_output":
+                match = re.search(r"write_flash: (\d+)/(\d+) sectors", event["line"])
+                if match:
+                    done, total = map(int, match.groups())
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate", maximum=total, value=done)
+                    self.progress_text.set(f"{done / total:.0%} · bestätigte Sektoren")
+            elif kind == "result":
+                self.activity.set(event["message"])
+                if event.get("connected"):
+                    self.connected = True
+                    self.status.set(event["message"])
+                else:
+                    self.status.set("Vorgang beendet" if not event.get("warning") else "Vorgang beendet · Hinweis beachten")
+            elif kind == "failure":
+                self.connected = False
+                self.status.set("Vorgang gestoppt · erneut verbinden")
+                self.activity.set(event["error"])
+            elif kind == "finished":
+                self.busy = False
+                self.progress.stop()
+                self.progress.configure(value=0)
+                self.progress_text.set("")
+                self.update_controls()
+        if self.busy:
+            self.poll_id = self.root.after(UI_POLL_MS, self.poll)
+
+    def details(self):
+        window = tk.Toplevel(self.root)
+        window.title("X6 · Details")
+        window.geometry("800x500")
+        text = tk.Text(window, wrap="word", font=("Consolas", 10))
+        text.pack(fill="both", expand=True)
+        text.insert("1.0", json.dumps(self.report, ensure_ascii=False, indent=2))
+        text.configure(state="disabled")
+
+    def save_report(self):
+        target = filedialog.asksaveasfilename(parent=self.root, title="Bericht speichern", defaultextension=".json", initialfile="x6-bericht.json")
+        if target:
+            try:
+                Path(target).write_text(json.dumps(self.report, ensure_ascii=False, indent=2), encoding="utf-8")
+            except OSError as error:
+                messagebox.showerror("Bericht speichern", str(error), parent=self.root)
+
+    def open_browser(self):
+        if self.server:
+            try:
+                subprocess.Popen([str(web.browser_path()), self.server.launch_url()])
+            except (OSError, toolkit.ToolkitError) as error:
+                messagebox.showerror("Online-Flasher öffnen", str(error), parent=self.root)
+
+    def close(self):
+        if self.busy or self.jobs.owner:
+            messagebox.showinfo("X6 wird verwendet", "Bitte den laufenden Auftrag beenden und in GitHub Pages zuerst trennen.", parent=self.root)
             return
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=2)
+        if self.poll_id:
+            self.root.after_cancel(self.poll_id)
+        if self.server:
+            self.server.shutdown()
+            self.server.server_close()
+            self.thread.join(timeout=2)
         self.root.destroy()
 
 
+def self_test(window: HelperWindow, profile: toolkit.Profile, runtime: Path) -> dict:
+    """Check resources, real window controls and HTTP, never USB."""
+    log = toolkit.new_run("package-self-test")
+    toolkit.ActionsBackend(profile, runtime, log)  # hashes only; no process/USB command
+    payload = x6_poweroff.load_payload(profile, runtime)
+    http_checks = check_http_bridge(window.server)
+    root = window.root
+    root.geometry("+10000+10000")
+    root.deiconify()
+    root.update()
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetParent.argtypes = [wintypes.HWND]
+    user32.GetParent.restype = wintypes.HWND
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.SendMessageW.restype = ctypes.c_ssize_t
+    hwnd = user32.GetParent(root.winfo_id())
+    icons = [bool(user32.SendMessageW(hwnd, 0x7F, size, 0)) for size in (0, 1)]
+    fits = all(button.winfo_rooty() + button.winfo_height() <= root.winfo_rooty() + root.winfo_height()
+               and button.winfo_rootx() + button.winfo_width() <= root.winfo_rootx() + root.winfo_width()
+               and button.winfo_height() >= button.winfo_reqheight()
+               and button.winfo_width() >= button.winfo_reqwidth()
+               for button in window.controls if button.winfo_ismapped())
+    return {"ok": all(icons) and fits, "window_icons": icons, "http_pairing": http_checks,
+            "controls": [button.cget("text") for button in window.controls], "buttons_fit": fits,
+            "poweroff_payload_size": len(payload), "backend_hashes_checked": True,
+            "device_access": False, "browser_started": False,
+            "workspace_outside_resources": not toolkit.PRIVATE_ROOT.is_relative_to(toolkit.ROOT)}
+
+
 def main() -> None:
-    """Start without a console; self-test checks packaged resources without USB."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--self-test", type=Path)
+    parser.add_argument("--no-browser", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if os.name == "nt":
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    toolkit.use_desktop_workspace()
     root = tk.Tk()
     root.withdraw()
+    server = None
     try:
-        # A known loopback port lets a directly opened Pages tab pair on click.
-        # Packaging tests use an ephemeral port and never contact a running app.
-        server = web.WebServer(0 if args.self_test else web.DEFAULT_PORT, toolkit.Profile.load(), online=True)
-        for name in web.PAYLOAD_NAMES:
-            server.payload(name)
-        poweroff_payload = x6_poweroff.load_payload(server.profile, server.runtime)
-        window = HelperWindow(root, server)
-        root.update_idletasks()
+        profile, jobs = toolkit.Profile.load(), DeviceJobs()
+        bridge_error = ""
+        try:
+            server = web.WebServer(0 if args.self_test else web.DEFAULT_PORT, profile, toolkit.DEFAULT_RUNTIME, online=True, jobs=jobs)
+        except (OSError, toolkit.ToolkitError) as error:
+            bridge_error = str(error)
+        window = HelperWindow(root, profile, toolkit.DEFAULT_RUNTIME, jobs, server, bridge_error)
         if args.self_test:
-            http_checks = check_http_bridge(server)
-            # Windows attaches window icons when the window is mapped. Map it
-            # outside the visible desktop for this hardware-free packaging test.
-            root.geometry("+10000+10000")
-            root.deiconify()
-            root.update()
-            user32 = ctypes.WinDLL("user32", use_last_error=True)
-            user32.GetParent.argtypes = [wintypes.HWND]
-            user32.GetParent.restype = wintypes.HWND
-            user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-            user32.SendMessageW.restype = ctypes.c_ssize_t
-            hwnd = user32.GetParent(root.winfo_id())
-            icons = [bool(user32.SendMessageW(hwnd, 0x7F, size, 0)) for size in (0, 1)]
-            reset_button = window.reset_button.cget("text") == "ADFU verlassen" and window.reset_button.cget("state") == "normal"
-            enter_button = window.enter_button.cget("text") == "ADFU betreten" and window.enter_button.cget("state") == "normal"
-            poweroff_button = window.poweroff_button.cget("text") == "Player ausschalten" and window.poweroff_button.cget("state") == "normal"
-            buttons_fit = all(button.winfo_rooty() + button.winfo_height() <= root.winfo_rooty() + root.winfo_height()
-                              and button.winfo_rootx() + button.winfo_width() <= root.winfo_rootx() + root.winfo_width()
-                              for button in (window.enter_button, window.reset_button, window.poweroff_button))
-            args.self_test.write_text(json.dumps({"ok": all(icons) and reset_button and enter_button and poweroff_button and buttons_fit,
-                                                 "helpers": list(web.PAYLOAD_NAMES),
-                                                 "window_icons": icons, "http_pairing": http_checks,
-                                                 "reset_button": reset_button,
-                                                 "enter_button": enter_button,
-                                                 "poweroff_button": poweroff_button,
-                                                 "poweroff_payload_size": len(poweroff_payload),
-                                                 "buttons_fit": buttons_fit,
-                                                 "device_access": False}), encoding="utf-8")
+            args.self_test.write_text(json.dumps(self_test(window, profile, toolkit.DEFAULT_RUNTIME)), encoding="utf-8")
             window.close()
             return
         root.deiconify()
-        if not args.no_browser:
-            root.after(250, lambda: window.open_browser(True))
         root.mainloop()
     except (OSError, ValueError, tk.TclError, toolkit.ToolkitError) as error:
         if args.self_test:
             args.self_test.write_text(json.dumps({"ok": False, "error": str(error)}), encoding="utf-8")
         else:
-            messagebox.showerror("X6-Helfer konnte nicht starten", str(error), parent=root)
+            messagebox.showerror("X6-App konnte nicht starten", str(error), parent=root)
+        if server:
+            server.server_close()
         root.destroy()
 
 

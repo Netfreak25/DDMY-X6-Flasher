@@ -2,110 +2,87 @@
 
 <img src="assets/x6-icon.svg" alt="X6 Flasher Icon" width="72" align="right">
 
-Ein übersichtlicher WebUSB-Flasher für den **DDMY X6 mit Actions ATJ2157**.
-Firmware sichern, vergleichen und zurückspielen – direkt im Browser.
+Eine portable **Windows-App** zum Sichern, Vergleichen und Flashen des
+**DDMY X6 mit Actions ATJ2157**. Dieselben Hauptfunktionen stehen auch auf
+unserer WebUSB-Seite bereit.
 
-**[Flasher online öffnen](https://netfreak25.github.io/DDMY-X6-Flasher/)** ·
-**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases)** ·
-**[Bedienungsanleitung](docs/BEDIENUNG.md)**
+**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/tag/v0.2.0-beta.1)** ·
+**[Online-Flasher öffnen](https://netfreak25.github.io/DDMY-X6-Flasher/)** ·
+**[Bedienung](docs/BEDIENUNG.md)**
 
 ## Funktionen
 
-| Funktion | Was sie macht |
+| Funktion | Ablauf |
 | --- | --- |
-| Sicherung erstellen | MBREC, beide BREC-Kopien und das gesamte LFI als `.x6backup.zip` sichern. |
-| Sicherung wiederherstellen | Vollständige ZIP-Sicherungen oder vorhandene Toolkit-Sicherungsordner prüfen und zurückschreiben. |
-| LFI-Teilaktualisierung | Eine passende LFI-`.bin` prüfen, den bisherigen Inhalt lokal sichern, schreiben und vollständig zurücklesen. |
-| Mit Gerät vergleichen | Die ausgewählte `.bin` mit dem gesamten Firmwarebereich vergleichen und abweichende Bytes zählen. |
-| ADFU betreten | Den Player direkt im Windows-Helper nach ADFU umschalten, ohne Website. |
-| ADFU verlassen | Den Player direkt im Windows-Helper neu starten, ohne Website oder Browser-Verbindung. |
-| Player ausschalten | Den eigenen Ausschaltcode in den RAM laden und prüfen. Er wartet auf das Abziehen von USB und fordert dann das Ausschalten an. Kein Firmware-Flash. |
+| Sicherung erstellen | MBREC, MBREC-Kopie, BREC 0, BREC 1 und vollständiges LFI als kompatibles `.x6backup.zip` speichern. |
+| Sicherung wiederherstellen | ZIP oder Toolkit-Ordner prüfen, MBREC → BREC → LFI schreiben, abschließen und alle fünf Dateien zurücklesen. |
+| Firmware flashen · LFI | `.bin` prüfen, bisheriges LFI zuerst speichern und prüfen, schreiben und vollständig vergleichen. |
+| Mit Gerät vergleichen | Alle Bytes des Geräte-LFI vergleichen, auch bei beschädigtem Geräteinhalt. |
+| ADFU betreten / verlassen | Den Wartungsmodus direkt in der App wechseln; Erfolg erst nach erkannter USB-Anmeldung melden. |
+| Player ausschalten | Eigenen RAM-Code laden und zurücklesen. Nach Startbestätigung USB abziehen; der Code wartet darauf. |
 
-„Full“ umfasst **Bootdatensätze und Firmware**, ungefähr 62 MB. Musikdateien,
-der übrige NAND-Inhalt und die SD-Karte gehören nicht zur Sicherung.
-Alle 148 LFI-Dateiprüfsummen werden geprüft. Unbestätigte Schreibbefehle werden
-nicht automatisch wiederholt. Eine fehlgeschlagene Sicherung bleibt ausdrücklich
-unvollständig; vorhandene Lesedaten können trotzdem gespeichert werden.
+**Full umfasst Bootdatensätze und LFI**, etwa 62 MB. Musikdateien, der übrige
+NAND-Inhalt und die SD-Karte sind nicht enthalten. **BREC gehört zur vollständigen
+Firmware**, einschließlich des frühen Startbilds. Eine einzelne LFI-`.bin`
+ist nur eine Teilaktualisierung; für BREC + LFI ein vollständiges Paket wiederherstellen.
 
-**Vollständige angepasste Firmware umfasst BREC und LFI.** Der einzelne `.bin`-Flash
-ist ausdrücklich nur eine LFI-Teilaktualisierung. Für eine vollständige Installation
-ist ein passendes Gesamtpaket über die Wiederherstellungsfunktion erforderlich.
+Unvollständige Sicherungen bleiben speicherbar, werden jedoch nicht für Restore
+freigegeben. Kein unbestätigter Schreibbefehl wird automatisch wiederholt.
+„Verifiziert“ erfordert vollständiges bytegleiches Rücklesen.
 
 ## Schnellstart
 
-1. Die **Windows-App** aus der [aktuellen Release](https://github.com/Netfreak25/DDMY-X6-Flasher/releases) herunterladen und das ZIP entpacken.
-2. **DDMY X6 Helper.exe** per Doppelklick starten. Chrome wird beim Öffnen bevorzugt. Die Pages-Seite kann auch direkt im bereits geöffneten Chrome-Tab aufgerufen werden.
-3. Im Browser **Verbinden** wählen. Die Seite koppelt sich mit der laufenden App, die den Wechsel nach ADFU übernimmt. Danach den X6 im USB-Dialog auswählen. Nach einem längeren Wechsel erscheint dafür **USB-Zugriff erlauben** als zweiter Klick.
-4. Eine Sicherung erstellen oder eine eigene Firmware auswählen.
-5. Nach der Nutzung die App schließen.
+1. Windows-ZIP entpacken und **DDMY X6 Flasher.exe** öffnen.
+2. **Verbinden** anklicken. Erst dann wird der angeschlossene Player abgefragt.
+3. Eine der vier Aktionen auswählen. Für Flash/Restore zuerst die Datei beziehungsweise Sicherung wählen.
+4. Die App nach dem Vorgang schließen.
 
-Die App ist portabel, hat ein eigenes Fenster und Taskleisten-Icon und benötigt
-keine separate Python-Installation. Sie installiert **keinen Windows-Dienst**,
-keinen Autostart und bleibt nach dem Schließen nicht im Hintergrund aktiv.
-Die Schaltfläche **Offline öffnen** verwendet die mitgelieferte lokale Website.
-Für die direkte Kopplung aus einem Pages-Tab ist mindestens **Helper Beta 2**
-erforderlich. Zum Aktualisieren die alte App schließen und die neue EXE starten.
-Ab **Beta 3** belegt die App ihren lokalen Port exklusiv. Läuft bereits ein
-Helper oder alter X6-Webstarter auf diesem Port, wird der zweite Start mit
-einer verständlichen Meldung beendet.
+Kein Dienst, kein Autostart, keine separate Python-Installation und kein
+automatischer Browserstart. Fenster- und Taskleisten-Icon sind enthalten.
+Die native App benötigt **keinen Browser und keine lokale Website**.
+Der frühere Offline-Webstarter und „Offline öffnen“ sind entfernt.
 
-Ab **Beta 4** gibt es **ADFU verlassen** direkt im App-Fenster. Der Button
-startet einen antwortenden ADFU-X6 neu und bestätigt dessen Rückkehr erst nach
-Erkennung im Normalmodus. Eine bestehende USB-Verbindung im Flasher vorher
-über **Trennen** freigeben. Der Button verändert keine Firmware im Flash.
+Voraussetzungen: Windows 10/11 (64 Bit), WinUSB für ADFU `10D6:10D6`.
+Der normale Massenspeichertreiber bleibt bestehen. Bei einem Windows-Zugriffsfehler
+beim ADFU-Wechsel die App über **Als Administrator ausführen** starten.
 
-Ab **Beta 5** steht daneben **ADFU betreten**. Beide Richtungen verwenden die
-vorhandenen Toolkit-Abläufe und bestätigen den Zielmodus erst nach Erkennung.
-Während eines Wechsels sind beide Buttons gesperrt. Unvollständige Sicherungen
-zeigen jetzt direkt, welche Bereiche gültig sind und welche Prüfung scheiterte.
+## GitHub Pages weiterverwenden
 
-Ab **Beta 7** wartet **Player ausschalten** direkt im RAM auf das Abziehen
-des USB-Kabels. Die App wechselt bei Bedarf nach ADFU, prüft den 220-Byte-Code
-und dessen vollständigen RAM-Rücklesevergleich und lässt den Start bestätigen.
-Sobald **„Start bestätigt. Jetzt USB-Kabel abziehen.“** erscheint, das Kabel
-abziehen. Erst wenn die USB-Stromversorgung wegfällt, schreibt der Code die
-Ausschaltwerte. Während des Loops wird der Watchdog bedient; es gibt keinen
-festen Countdown und keine weiteren USB-Abfragen. Die Startbestätigung belegt
-kein physisches Ausschalten; dieser Build-Kandidat ist auf Hardware unverifiziert.
+App geöffnet lassen und die [Pages-Seite](https://netfreak25.github.io/DDMY-X6-Flasher/)
+in Chrome oder Edge öffnen. Alternativ **Online-Flasher öffnen** in der App.
+**Verbinden** koppelt den Tab mit der App und öffnet nach dem ADFU-Wechsel den
+WebUSB-Dialog. Nach einem längeren Wechsel ist ein zweiter Klick auf
+**USB-Zugriff erlauben** nötig.
 
-Ab **Beta 8** verwendet Full Restore dieselbe BREC-Transportvorbereitung wie
-das korrigierte ursprüngliche Toolkit. Die Anpassung erfolgt automatisch in
-einer separaten Kopie; Rücklesevergleiche verwenden weiterhin das unveränderte
-Backup. Original- und angepasste BREC-Dateien ergeben in beiden Toolkits
-bytegleiche Übertragungsdaten.
-
-Voraussetzungen: Windows 10/11 (64 Bit), Chrome oder Edge und WinUSB für das
-ADFU-Gerät `10D6:10D6`. Der normale USB-Massenspeichertreiber bleibt bestehen.
-Bei einem Windows-Zugriffsfehler während des ADFU-Wechsels die App schließen
-und über **Als Administrator ausführen** neu starten.
+Browser und App teilen eine exklusive Gerätesperre. **Im Browser zuerst Trennen**,
+bevor die native App das Gerät verwenden soll. Auch mehrere App-Instanzen sind
+gegeneinander gesperrt. Ein belegter API-Port verhindert nur die Pages-Kopplung;
+die native App bleibt verwendbar.
 
 ## Wie es arbeitet
 
-Die Website wird über GitHub Pages geladen. Die lokale Windows-App stellt
-Geräteerkennung, den Windows-SCSI-Wechsel nach ADFU und sechs hashgeprüfte,
-generische RAM-Hilfsprogramme bereit. Boot- und Firmwaredaten überträgt der
-Browser **direkt per WebUSB** zum Player und zurück.
+Die Windows-App steuert den vorhandenen Actions-Backend-Code direkt. Ein
+Hintergrundauftrag hält die Oberfläche bedienbar; Fortschritt stammt aus
+bestätigten Backend-Antworten. Details und Berichte sind separat erreichbar.
 
-Die Verbindung zur App läuft ausschließlich über `127.0.0.1`, mit einem zufälligen
-Sitzungsschlüssel und einer Prüfung der erlaubten Website-Herkunft. Ein direkt
-geöffneter Pages-Tab holt den Schlüssel erst beim Klick auf **Verbinden** über
-den festen lokalen App-Port aus `site.json`. Der Kopplungsaufruf prüft Herkunft,
-Host und einen eigenen Anfrage-Header und greift noch nicht auf USB zu.
-Beim Öffnen durch die App ist zusätzlich die Übergabe im URL-Fragment möglich;
-der Schlüssel wird nicht an GitHub übertragen. Chrome kann die Erlaubnis für
-den Zugriff auf andere Apps auf diesem Gerät abfragen.
+Die bekannte Reihenfolge der RAM-Treiber, 16-KiB-Schreibblöcke und 25-ms-Pausen
+bleiben bestehen. Bereits geladenes ADFUS wird vor dem ROM-INFO-Befehl erkannt.
+Die BREC-Prüfsumme wird nur in einer Übertragungskopie vorbereitet; Originaldateien
+bleiben erhalten und sind Grundlage des Rücklesevergleichs.
 
-Beim bloßen Öffnen der Seite oder App wird der Player **nicht abgefragt**.
-Der native Button **ADFU verlassen** verwendet Windows-WinUSB direkt, prüft
-den ADFUS-Helfer im RAM, lädt ihn bei Bedarf und sendet den Reset-Befehl.
-Er benötigt keine Website, keine zusätzlichen Binärdateien und schreibt kein NAND.
-Firmware, Backups und Berichte bleiben auf dem eigenen Rechner. Es gibt keine
-Upload-Funktion, Cloud-Sicherung oder Telemetrie.
+Die Pages-Seite überträgt Boot- und Firmwaredaten weiterhin **direkt per WebUSB**.
+Die App bietet dafür ausschließlich eine Loopback-API mit Sitzungsschlüssel,
+Herkunftsprüfung und Gerätesperre. Sie liefert keine HTML-/JS-/CSS-Website aus
+und nimmt keine Firmwaredateien über HTTP an.
+
+Dumps, Arbeitsdateien und Protokolle der nativen App liegen unter
+`%LOCALAPPDATA%\DDMY-X6-Flasher\private_dumps`. Ausgewählte Sicherungen werden
+zusätzlich am gewünschten Speicherort abgelegt. Firmware, Backups und Berichte
+werden nicht hochgeladen; keine Telemetrie.
 
 ## Das Gerät
 
-Der **DDMY X6** ist ein kompakter Multimedia-Player mit Touchscreen. Das hier
-unterstützte Gerät bietet unter anderem Musik- und Videowiedergabe, Radio,
+Der DDMY X6 ist ein Multimedia-Player mit Touchscreen, Musik, Video, Radio,
 Aufnahme, Bluetooth, E-Books und microSD-Unterstützung.
 
 | Merkmal | Unterstützte Variante |
@@ -113,42 +90,38 @@ Aufnahme, Bluetooth, E-Books und microSD-Unterstützung.
 | Marke / Modell | DDMY X6 |
 | Prozessor | Actions ATJ2157 |
 | Display | 240 × 320 Pixel, Hochformat |
-| Interner Speicher | 4-GB-NAND; normales internes USB-Laufwerk mit 3.835.691.008 Byte |
+| Interner Speicher | 4-GB-NAND; internes USB-Laufwerk mit 3.835.691.008 Byte |
 | NAND-Kennung | `2C 68 04 4A A9` |
 | USB normal / ADFU | `10D6:1101` / `10D6:10D6` |
 | LFI-Größe | 61.657.088 Byte |
 
-Andere Geräte mit dem Namen „X6“ oder gleicher Gehäuseform können andere
-Hardware enthalten. Das Profil ist auf die oben genannte Variante begrenzt.
+Andere „X6“-Geräte können andere Hardware enthalten; die Unterstützung gilt für
+dieses Profil.
 
-<img src="assets/ddmy-x6-detail.png" alt="Nahaufnahme des DDMY-X6-Displays mit angepasster Oberfläche" width="340">
+<img src="assets/ddmy-x6-detail.png" alt="Nahaufnahme des DDMY-X6-Displays" width="340">
 
-*Nahaufnahme des Testgeräts mit angepasster Oberfläche. Foto mit Zustimmung
-des Eigentümers veröffentlicht; die abgebildete Firmware ist nicht enthalten.*
+*Mit Zustimmung veröffentlichtes Gerätefoto. Die abgebildete Firmware ist nicht enthalten.*
 
 ## Pakete und Prüfstand
 
-- **Windows-Helper-ZIP:** portable App, Offline-Oberfläche und genau sechs
-  generische Hilfsdateien: `adfus.bin`, `fwsc.bin`, `nandhwsc.bin`,
-  `nandinfo.bin`, `nandread.bin`, `vram_last.bin`.
-  Dazu kommt der eigene, aus dem mitgelieferten C-Quelltext gebaute RAM-
-  Ausschaltcode `x6_poweroff.bin` (220 Byte).
-- **Source-ZIP:** der veröffentlichte Programmcode, Tests, Icons und Anleitung.
-- **Nicht enthalten:** vollständige oder modifizierte Gerätefirmware, Dumps,
-  persönliche Sicherungen, gerätespezifische Serienkennungen oder
-  Reverse-Engineering-Unterlagen.
+- **Windows-ZIP:** portable App, bestehendes Actions-Backend + libusb, sechs
+  freigegebene generische RAM-Helfer und eigener RAM-Ausschaltcode.
+- **Source-ZIP:** Flasher, Pages-Code, Tests, Icons, Bedienung, Backend-Quelltext
+  und zugehöriger libusb-Quelltext.
+- **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
+  Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**Beta / unverifizierter Build-Kandidat:** Protokoll, Dateiabläufe und Oberfläche
-sind automatisiert mit simuliertem USB und künstlichen Testdaten geprüft. Der
-neue Browserweg, der native Reset-Button und die Ausschaltfunktion sind noch nicht am X6 auf Hardware bestätigt. Die bisherige
-native Flash-Routine wurde als Grundlage übernommen.
-
-Die Wirkung des korrigierten Boot-Schreibwegs auf beide BREC-Kopien ist im
-ursprünglichen Toolkit durch vollständiges Rücklesen belegt. Ab Beta 8 ist daher
-der normale Full Restore freigegeben; er erfordert das bytegleiche Rücklesen
-aller Bestandteile. Der Browserweg selbst bleibt auf Hardware unverifiziert.
+**v0.2.0-beta.1 ist ein auf Hardware unverifizierter Build-Kandidat.**
+Automatisierte Tests prüfen native Abläufe, ZIP-Austausch mit JavaScript,
+fehlende Bestätigungen, Zeitüberschreitungen, Rücklesefehler, GUI, HTTP-Grenzen
+und simuliertes WebUSB. Der EXE-Selbsttest prüft Ressourcen, Icons und Kopplung
+ohne Gerätezugriff. Der zugrunde liegende native Schreibweg und die korrigierte
+BREC-Vorbereitung stammen aus dem bestehenden Toolkit; die neue GUI-Ausführung
+wurde in dieser Version nicht am Player getestet.
 
 ## Entwicklung
+
+Python 3.11, Node.js und die Abhängigkeiten aus `package-lock.json`:
 
 ```text
 npm ci --ignore-scripts
@@ -156,31 +129,21 @@ npm test
 npm run test:ui
 npm run lint
 python -m unittest discover -s tests -q
-ruff check tools tests
+python -m ruff check tools tests
 ```
 
-Die Tests benötigen keine Dateien eines echten Players und greifen nicht auf
-Hardware zu. Für einen lokalen EXE-Build werden Python 3.11, PyInstaller 6.22.3
-und die sechs freigegebenen Hilfsdateien im lokalen Runtime-Verzeichnis benötigt.
-Für den Ausschaltcode wird zusätzlich ARM GCC 13.3.0 einschließlich `objcopy`
-benötigt: `arm-none-eabi-gcc` muss in `PATH` stehen oder `X6_ARM_GCC` auf die
-Compilerdatei zeigen. Der Build prüft den erzeugten Code gegen den festen Hash
-im X6-Profil und verwendet keine Dateien aus einer Gerätefirmware.
+Für den EXE-Build: PyInstaller 6.22.3, die acht hashgeprüften Runtime-Dateien aus
+dem X6-Profil unter `private_dumps/toolkit/runtime/` und ARM GCC 13.3.0.
+`X6_ARM_GCC` kann auf den ARM-Compiler zeigen. `python tools/build_helper.py`
+baut den Ausschaltcode und die App und startet den hardwarefreien EXE-Selbsttest.
+Die lokale Python-App startet über **Start X6 App.cmd**.
+`python tools/build_poweroff.py` baut ihren RAM-Code ins Runtime-Verzeichnis.
 
-```text
-python tools/build_helper.py
-```
+Die Quelltext-Release enthält die RAM-Helfer nicht separat. Für einen eigenen
+Build dürfen sie aus der Windows-Release extrahiert werden; ihre Hashes bleiben
+verbindlich. Buildausgaben bleiben unter dem ignorierten `private_dumps/`.
+Zum Paketieren den in `vendor/actions_flash/dependencies.json` festgelegten
+libusb-Quelltext unter `private_dumps/build/backend/` bereithalten, Änderungen
+committen und `python tools/package_release.py` ausführen.
 
-Der Build startet anschließend die erzeugte EXE in einem hardwarefreien
-Selbsttest. Dieser prüft die mitgelieferten Hilfsdateien, Fenstericons, alle drei Gerätebuttons und
-die tatsächlichen HTTP-Antworten für CORS-Vorabfrage und Sitzungskopplung.
-
-Der ARM-Test verwendet Unicorn und `X6_POWEROFF_PAYLOAD` mit dem Pfad zum
-gebauten `x6_poweroff.bin`. Er prüft die tatsächlichen Maschinenbefehle und
-ihre Registerzugriffe, das Warten bei anliegendem USB-Strom und die Fortsetzung
-nach simuliertem Abziehen. `python tools/build_poweroff.py` erzeugt die Datei für
-den Start aus Python im privaten Runtime-Verzeichnis. Der EXE-Build baut und
-integriert sie automatisch; Endnutzer benötigen keinen Compiler.
-
-Die Build-Ausgabe bleibt unter dem ignorierten Verzeichnis `private_dumps/`.
-Abhängigkeiten und Hinweise: [THIRD_PARTY.md](THIRD_PARTY.md).
+[Abhängigkeiten und Lizenzen](THIRD_PARTY.md) · [Änderungen](docs/CHANGELOG.md)

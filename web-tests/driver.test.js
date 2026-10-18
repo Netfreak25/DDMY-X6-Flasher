@@ -68,14 +68,24 @@ test('FWSC always loads before overlapping NANDINFO and rejects other NAND IDs',
 
 test('RAM execution uses explicit entry address and verifies loaded ADFUS bytes', async () => {
   const calls = [], adfus = await payload('adfus.bin');
+  let reads = 0;
   const usb = {info: async () => new Uint8Array([0, 67, 65, 68, 70, 85, 68, 48, 81]),
     writeRam: async address => calls.push(['write', address]), switchTo: async address => calls.push(['switch', address]),
-    readRam: async () => adfus.subarray(0, 512)};
+    readRam: async () => reads++ ? adfus.subarray(0, 512) : new Uint8Array(512)};
   await new X6Driver(usb, profile, payload).bootstrap();
   assert.equal(usb.ramBlock, 512);
   assert.deepEqual(calls, [['write', 0x118000], ['switch', 0x118000]]);
   usb.readRam = async () => new Uint8Array(512);
   await assert.rejects(new X6Driver(usb, profile, payload).bootstrap(), /RAM-Prüfung/);
+});
+
+test('already loaded ADFUS is reused without the unsupported ROM INFO command', async () => {
+  const adfus = await payload('adfus.bin');
+  const usb = {readRam: async () => adfus.subarray(0, 512),
+    info: async () => { throw new Error('ROM INFO must not be sent'); }};
+  const driver = new X6Driver(usb, profile, payload);
+  await driver.bootstrap();
+  assert.equal(driver.bootstrapped, true);
 });
 
 test('boot reader returns exactly the actual indexed copy, including partial data on checksum failure', async () => {

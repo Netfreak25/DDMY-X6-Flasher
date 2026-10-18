@@ -1,4 +1,4 @@
-"""Serve the local X6 WebUSB UI and its small Windows ADFU bridge."""
+"""Small loopback API for GitHub Pages; never serves a local website."""
 
 from __future__ import annotations
 
@@ -6,11 +6,9 @@ import argparse
 import dataclasses
 import hashlib
 import json
-import mimetypes
 import os
 import secrets
 import socket
-import subprocess
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +16,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlencode, urlsplit
 
 import x6_toolkit as toolkit
+from x6_jobs import DeviceJobs
 
 WEB_ROOT = toolkit.ROOT
 SITE_CONFIG = WEB_ROOT / "site.json"
@@ -32,11 +31,13 @@ class WebServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
 
-    def __init__(self, port: int, profile: toolkit.Profile, runtime: Path = DEFAULT_PAYLOADS, online: bool = False) -> None:
+    def __init__(self, port: int, profile: toolkit.Profile, runtime: Path = DEFAULT_PAYLOADS,
+                 online: bool = False, jobs: DeviceJobs | None = None) -> None:
         self.profile = profile
         self.runtime = runtime.resolve()
         self.token = secrets.token_urlsafe(32)
         self.switch_lock = threading.Lock()
+        self.jobs = jobs or DeviceJobs()
         super().__init__(("127.0.0.1", port), Handler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
         site_config = json.loads(SITE_CONFIG.read_text(encoding="utf-8"))
@@ -64,13 +65,12 @@ class WebServer(ThreadingHTTPServer):
             raise toolkit.ToolkitError(
                 f"Der lokale X6-Port {self.server_address[1]} ist nicht verfügbar. "
                 "Bitte bereits laufende X6-Apps oder alte X6-Webstarter schließen. "
-                f"Die App wurde nicht gestartet. Details: {error}"
+                f"Online-Kopplung nicht verfügbar. Details: {error}"
             ) from error
 
-    def launch_url(self, online: bool) -> str:
+    def launch_url(self, online: bool = True) -> str:
         """Pass credentials in the URL fragment, never to the public web server."""
-        base = self.pages_url if online else f"{self.origin}/"
-        return base + "#" + urlencode({"session": self.token, "bridge": self.origin})
+        return self.pages_url + "#" + urlencode({"session": self.token, "bridge": self.origin})
 
     def payload(self, name: str) -> bytes:
         """Serve only the six release-approved generic RAM helpers, hash checked."""
@@ -125,13 +125,14 @@ class Handler(BaseHTTPRequestHandler):
         """Preflight either origin-checked pairing or the session-protected API."""
         headers = {item.strip().lower() for item in self.headers.get("Access-Control-Request-Headers", "").split(",") if item.strip()}
         pairing = self.path == "/api/pair"
-        expected_headers = {"x-x6-pair"} if pairing else {"x-x6-session"}
+        expected_headers = {"x-x6-pair"} if pairing else {"x-x6-session", "x-x6-job"}
         methods = ("POST",) if pairing else ("GET", "POST")
         if (self.headers.get("Host") != urlsplit(self.server.origin).netloc
                 or self.headers.get("Origin") not in self.server.allowed_origins
                 or not self.path.startswith("/api/")
                 or self.headers.get("Access-Control-Request-Method") not in methods
-                or headers != expected_headers):
+                or (headers != expected_headers if pairing else
+                    not ({"x-x6-session"} <= headers <= expected_headers))):
             self.json_reply(403, {"error": "Nicht freigegebene Website oder Anfrage."})
             return
         self.send_response(204)
@@ -170,7 +171,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 if path == "/api/status":
+                    self.server.jobs.check(self.headers.get("X-X6-Job", ""))
                     self.json_reply(200, dataclasses.asdict(toolkit.probe_device(self.server.profile)))
+                elif path == "/api/jobs/check":
+                    self.server.jobs.check(self.headers.get("X-X6-Job", ""))
+                    self.json_reply(200, {"ok": True})
                 elif path == "/api/profile":
                     profile = dataclasses.asdict(self.server.profile)
                     profile["nand_id"] = self.server.profile.nand_id.hex()
@@ -183,14 +188,7 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, toolkit.ToolkitError) as exc:
                 self.json_reply(409, {"error": str(exc)})
             return
-        relative = "index.html" if path == "/" else path.lstrip("/")
-        target = (WEB_ROOT / relative).resolve()
-        allowed = relative in ("index.html", "styles.css", "app.js", "site.json", "tools/x6_profile.json") or relative.startswith(("lib/", "vendor/", "assets/"))
-        if not allowed or not target.is_relative_to(WEB_ROOT.resolve()) or not target.is_file():
-            self.json_reply(404, {"error": "Datei nicht gefunden."})
-            return
-        content_type = "text/javascript" if target.suffix == ".js" else mimetypes.guess_type(target.name)[0]
-        self.reply(200, target.read_bytes(), (content_type or "application/octet-stream") + "; charset=utf-8")
+        self.json_reply(404, {"error": "Keine lokale Website. Bitte die Windows-App oder GitHub Pages verwenden."})
 
     def do_POST(self) -> None:
         if self.path == "/api/pair":
@@ -199,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             self.json_reply(403, {"error": "Keine gültige lokale Sitzung."})
             return
-        if self.path != "/api/enter-adfu":
+        if self.path not in ("/api/enter-adfu", "/api/jobs/acquire", "/api/jobs/release"):
             self.json_reply(404, {"error": "Unbekannte Funktion."})
             return
         if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Length", "0") != "0":
@@ -209,7 +207,14 @@ class Handler(BaseHTTPRequestHandler):
             self.json_reply(409, {"error": "Der Wechsel nach ADFU läuft bereits."})
             return
         try:
-            self.json_reply(200, dataclasses.asdict(toolkit.enter_adfu(self.server.profile)))
+            if self.path == "/api/jobs/acquire":
+                self.json_reply(200, {"job": self.server.jobs.acquire("GitHub Pages")})
+            elif self.path == "/api/jobs/release":
+                self.server.jobs.release(self.headers.get("X-X6-Job", ""))
+                self.json_reply(200, {"ok": True})
+            else:
+                self.server.jobs.check(self.headers.get("X-X6-Job", ""))
+                self.json_reply(200, dataclasses.asdict(toolkit.enter_adfu(self.server.profile)))
         except (OSError, toolkit.ToolkitError) as exc:
             self.json_reply(409, {"error": str(exc)})
         finally:
@@ -235,16 +240,13 @@ def browser_path() -> Path:
 
 
 def main() -> None:
-    """Start the loopback website using the existing private runtime directory."""
+    """Run the optional Pages bridge; the desktop app is the default entrypoint."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=int(os.environ.get("X6_WEB_PORT", DEFAULT_PORT)))
-    parser.add_argument("--online", action="store_true", help="Open the configured GitHub Pages website")
-    parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
-    with WebServer(args.port, toolkit.Profile.load(), online=args.online) as server:
-        if not args.no_browser:
-            subprocess.Popen([str(browser_path()), server.launch_url(args.online)])
-        print(f"X6 Web Toolkit: {server.origin} (zum Beenden Strg+C)", flush=True)
+    toolkit.use_desktop_workspace()
+    with WebServer(args.port, toolkit.Profile.load(), online=True) as server:
+        print(f"X6 Pages API: {server.origin} (zum Beenden Strg+C)", flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:

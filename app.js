@@ -4,7 +4,6 @@ import { X6Operations, incompleteDumpMessage } from './lib/workflows.js';
 import { validateLfi, validateBundle, sha256, assertSame } from './lib/formats.js';
 import { packBackup, unpackBackup, importFolder } from './lib/archive.js';
 import { sessionFromLocation, bridgeRequest, pairHelper, saveSession } from './lib/bridge.js';
-import { hex } from './lib/formats.js';
 
 const $ = id => document.getElementById(id);
 let session = null, sessionError = null;
@@ -12,13 +11,26 @@ try { session = sessionFromLocation(location, sessionStorage); }
 catch (error) { sessionError = error; }
 history.replaceState(null, '', location.pathname);
 const state = {profile: null, site: null, usb: null, driver: null, serial: null, firmware: null, backup: null,
-  busy: false, permissionNeeded: false, expectedReset: false, report: [], pendingBackup: null};
+  busy: false, permissionNeeded: false, expectedReset: false, report: [], pendingBackup: null, job: null};
 const sizeLabel = size => `${(size / 1_000_000).toFixed(1).replace('.', ',')} MB`;
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
 
 /** Hardware API calls go to the explicitly paired loopback helper only. */
 async function api(path, method = 'GET', binary = false) {
-  return bridgeRequest(session, path, method, binary);
+  return bridgeRequest(session, path, method, binary, state.job);
+}
+
+/** Hold the helper's device lease for the full WebUSB connection lifetime. */
+async function acquireDevice() {
+  if (!state.job) state.job = (await api('jobs/acquire', 'POST')).job;
+  if (!state.job) throw new Error('Bitte die aktuelle Windows-App verwenden; Gerätefreigabe fehlt.');
+}
+
+async function releaseDevice() {
+  if (!state.job) return;
+  const job = state.job;
+  state.job = null;
+  await bridgeRequest(session, 'jobs/release', 'POST', false, job);
 }
 
 function log(entry) {
@@ -67,7 +79,7 @@ function deviceStatus(label, description, connected = false) {
 }
 
 /** Serialize UI work across this page and other toolkit tabs on the same origin. */
-async function run(title, action) {
+async function run(title, action, checkLease = true) {
   if (state.busy) return;
   state.busy = true;
   state.report = [];
@@ -76,6 +88,7 @@ async function run(title, action) {
   updateControls();
   const execute = async lock => {
     if (!lock) throw new Error('Das Toolkit arbeitet bereits in einem anderen Tab.');
+    if (checkLease && state.driver) await api('jobs/check');
     return action();
   };
   try {
@@ -91,6 +104,10 @@ async function run(title, action) {
       deviceStatus('Neu verbinden', 'Die USB-Sitzung wurde beendet. Es werden keine weiteren Befehle gesendet.');
     }
   } finally {
+    if (!state.usb?.alive && state.job) {
+      try { await releaseDevice(); }
+      catch (error) { log({event: 'lease_release_failed', message: error.message}); }
+    }
     state.busy = false;
     updateControls();
   }
@@ -104,8 +121,7 @@ async function establish(device) {
   state.driver = new X6Driver(state.usb, state.profile, name => api(`payloads/${name}`, 'GET', true), log);
   progress('Player vorbereiten', 0, 0);
   try {
-    const identity = await state.usb.info();
-    if (hex(identity.subarray(0, 9)) !== '004341444655443051') throw new Error('Die ADFU-Kennung passt nicht zum X6.');
+    await state.driver.bootstrap();
   }
   catch (error) { await state.usb.close(); state.driver = null; throw error; }
   state.permissionNeeded = false;
@@ -129,9 +145,10 @@ $('connect').addEventListener('click', () => {
       result('Verbindung getrennt.', 'Zum normalen Start den Player erneut verbinden und „Player starten“ wählen.');
       return;
     }
-    if (chosen) { await establish(await chosen); return; }
+    if (chosen) { await acquireDevice(); await establish(await chosen); return; }
     progress('Windows-App verbinden', 0, 0);
     session = saveSession(await pairHelper(session?.origin || state.site.helper_origin, state.site.helper_timeout_ms), location, sessionStorage);
+    await acquireDevice();
     $('setup-note').hidden = true;
     const current = await api('status');
     if (current.mode === 'missing') throw new Error('Kein X6 gefunden. Bitte den Player per USB anschließen.');
@@ -153,7 +170,7 @@ $('connect').addEventListener('click', () => {
     }
     deviceStatus('ADFU bereit', 'Bitte einmal „USB-Zugriff erlauben“ anklicken und den Player auswählen.');
     result('USB-Zugriff erlauben', 'Der X6 ist bereit. Bestätige den Zugriff über die Schaltfläche oben.');
-  });
+  }, false); // Disconnect must remain possible even after a helper restart.
 });
 
 async function restart(driver) {
@@ -321,13 +338,14 @@ $('save-report').addEventListener('click', () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
-window.addEventListener('beforeunload', event => { if (state.busy || state.pendingBackup) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (state.busy || state.pendingBackup || state.job) { event.preventDefault(); event.returnValue = ''; } });
 navigator.usb?.addEventListener('disconnect', event => {
   if (state.usb?.device !== event.device || state.expectedReset) return;
   state.usb.alive = false; state.driver = null;
   log({event: 'disconnected'});
   deviceStatus('Verbindung verloren', 'Der USB-Zugriff wurde beendet. Es wird nicht automatisch weitergeschrieben.');
   if (!state.busy) result('Player getrennt.', 'Verbinde den Player erneut, um weiterzuarbeiten.', 'warning');
+  if (!state.busy) void releaseDevice().catch(error => log({event: 'lease_release_failed', message: error.message}));
   updateControls();
 });
 

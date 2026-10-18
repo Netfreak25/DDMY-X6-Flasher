@@ -1,159 +1,112 @@
-# Bedienung
+# Bedienung · Windows-App und Pages
 
-## App starten
+## Starten und verbinden
 
-Das Windows-Helper-ZIP aus der Release entpacken und **DDMY X6 Helper.exe**
-öffnen. Die portable App zeigt ein kleines Fenster und öffnet den Flasher in
-Chrome, falls installiert, sonst Edge. Das Fenster während der Verwendung offen lassen und danach
-schließen. Es gibt keinen Windows-Dienst, Autostart oder Hintergrundbetrieb
-nach dem Schließen.
+Windows-ZIP entpacken, **DDMY X6 Flasher.exe** öffnen und **Verbinden** anklicken.
+Der Start allein greift nicht auf den Player zu. Es wird kein Browser geöffnet.
+WinUSB muss für das ADFU-Gerät `10D6:10D6` installiert sein.
 
-Die EXE enthält Python, die sechs generischen RAM-Hilfsdateien und ab Beta 6
-unseren eigenen RAM-Ausschaltcode (ab Beta 7: 220 Byte mit USB-Warteloop). Eine
-vollständige Gerätefirmware ist nicht enthalten. **Offline öffnen** lädt die
-mitgelieferte Oberfläche direkt vom Rechner.
+**Trennen** in der Windows-App hebt die Geräteauswahl auf; es startet den
+Player nicht neu. Dafür **ADFU verlassen** verwenden. Der ADFU-Wechsel bei einer
+Sicherung oder einem Schreibauftrag erfolgt automatisch.
 
-Ab **Beta 2** kann die Pages-Seite auch direkt in einem vorhandenen Chrome-Tab
-geöffnet werden. Die App muss lediglich laufen. Die Version steht im App-Fenster;
-zum Aktualisieren die alte App schließen und die neue EXE starten.
+## Sicherung erstellen
 
-Ab **Beta 3** verhindert die App, dass mehrere X6-Webstarter denselben lokalen
-Port verwenden. Meldet die App einen belegten Port, die bereits laufende
-X6-App beziehungsweise alte X6-Webstarter schließen. Die neue App beginnt
-in diesem Fall keinen Gerätezugriff.
+**Sicherung erstellen** wählen und einen Speicherort für die
+`.x6backup.zip` angeben. Die fünf Binärdateien und ein kompatibles
+`manifest.json` werden gespeichert. Ein Teilfehler wird ausdrücklich als
+**unvollständig** angezeigt. Es wird keine fehlende Bootkopie erfunden.
 
-## Verbinden
+Schlägt nur das Speichern fehl, erscheint **Gelesene Sicherung speichern**.
+Dieser Knopf speichert die vorhandenen Daten ohne erneuten Gerätezugriff.
+Zusätzlich bleiben die gelesenen Dateien im privaten Arbeitsverzeichnis erhalten.
 
-1. Den X6 per USB anschließen.
-2. **Verbinden** im Flasher anklicken. Die Seite koppelt sich mit der laufenden
-   App. Diese erkennt den internen Player und übernimmt den Wechsel nach ADFU.
-3. Den ADFU-X6 im USB-Dialog auswählen. Dauert der Wechsel länger, zuerst
-   **USB-Zugriff erlauben** anklicken: Chrome benötigt dafür eine aktuelle
-   Benutzeraktion.
+## Firmware flashen · LFI
 
-Chrome/Edge fragt gegebenenfalls nach Zugriff auf die lokale App; diesen für
-unsere Pages-Seite erlauben. WinUSB muss für `10D6:10D6` installiert sein.
-Die Berechtigung kann in aktuellem Chrome als Zugriff auf andere Apps und
-Dienste auf diesem Gerät erscheinen. Sie betrifft den lokalen HTTP-Helper;
-die anschließende USB-Geräteauswahl ist eine eigene Berechtigung.
-Wenn Windows beim Wechsel Zugriff verweigert, die App schließen und über
-**Als Administrator ausführen** erneut starten. Bei mehreren passenden
-Playern bricht die Auswahl ab; bitte nur einen X6 anschließen.
+1. Eine passende LFI-`.bin` auswählen.
+2. **Firmware flashen · LFI** wählen und bestätigen.
+3. Speicherort für das bisherige LFI wählen.
+4. Sichern → Schreiben → vollständiges Rücklesen → Neustart abwarten.
 
-Die Startseite und die App selbst senden beim Öffnen keine Geräteabfrage.
-Erst **Verbinden** oder eine der drei Geräteaktionen in der App beginnt den Zugriff.
+Die Sicherung wird geschlossen, auf Datenträger geschrieben und vollständig
+verglichen, bevor der erste Flash-Schreibbefehl startet. Die ausgewählte
+Firmwaredatei bleibt unverändert. Header, Größe und alle 148 Dateiprüfsummen
+werden geprüft.
 
-## ADFU direkt in der App betreten
+Eine einzelne `.bin` ändert nur das LFI. Für die vollständige Firmware samt
+BREC und frühem Startbild ein vollständiges Paket wiederherstellen.
 
-Ab **Beta 5** lässt sich auch der Wechsel nach ADFU ohne Website auslösen:
+## Mit Gerät vergleichen
 
-1. Den normal gestarteten X6 per USB anschließen und die Windows-App öffnen.
-2. **ADFU betreten** anklicken und das Ergebnis abwarten.
+LFI-Datei wählen, dann **Mit Gerät vergleichen**. Der gesamte LFI-Bereich wird
+gelesen. Das Ergebnis zeigt **identisch** oder die Anzahl unterschiedlicher Bytes.
+Auch ein beschädigter Header auf dem Gerät verhindert den Vergleich nicht.
+Offsets und Hashes stehen in **Details**. Es wird nicht in den Flash geschrieben.
 
-Die App erkennt den internen Player, verwendet den bestehenden Windows-SCSI-
-Wechsel und wartet auf seine Anmeldung als ADFU-Gerät. Ist er bereits in ADFU,
-wird kein weiterer Umschaltbefehl gesendet. Bei verweigertem Windows-Zugriff
-die App schließen und **Als Administrator ausführen** wählen.
+## Sicherung wiederherstellen
 
-Während eines Wechsels sind beide ADFU-Buttons gesperrt. Das Öffnen der App
-allein schaltet den Player nicht um. Beide Buttons benötigen keine Website.
+ZIP-Datei oder bisherigen Toolkit-Ordner auswählen, dann
+**Sicherung wiederherstellen**. Vollständigkeit, Modell, NAND, Größen, Hashes
+und übereinstimmende Kopien werden geprüft. Die BREC-Übertragung wird vorbereitet,
+bevor der erste MBREC-Schreibbefehl gesendet wird.
 
-## ADFU direkt in der App verlassen
+Die Reihenfolge ist **MBREC → BREC → LFI → Abschluss → vollständiges Rücklesen**.
+Verglichen wird mit den unveränderten Sicherungsdateien. Nur wenn alle fünf
+Bereiche bytegleich sind, erscheint „vollständig verifiziert“.
 
-Ab **Beta 4** lässt sich der Player auch ohne Website starten:
+Das aktuelle X6-Profil gibt den belegten Boot-Schreibweg frei. Bei einem Profil
+ohne diese Freigabe verlangt die App eine ausdrückliche Notfall-Bestätigung.
+Fehlende Boot-Rücklesung bleibt dabei als unverifiziert sichtbar; kein
+automatischer Neustart. Ein unbestätigter Schreibbefehl stoppt in jedem Modus.
 
-1. Den X6 per USB anschließen und die Windows-App öffnen.
-2. Falls der Browser noch mit dem Player verbunden ist, dort **Trennen** wählen.
-   Einen laufenden Schreib- oder Lesevorgang zuerst fertigstellen lassen.
-3. Im App-Fenster **ADFU verlassen** anklicken und das Ergebnis abwarten.
+## ADFU und Ausschalten
 
-Die App verwendet den enthaltenen ADFUS-RAM-Helfer und sendet einen Reset.
-Es wird keine Firmware im Flash verändert. Die Erfolgsmeldung setzt voraus,
-dass der X6 anschließend als normaler USB-Player erkannt wurde. Ist er bereits
-im Normalmodus, wird kein Reset gesendet.
+- **ADFU betreten:** vorhandenen Windows-SCSI-Wechsel ausführen und ADFU-Anmeldung prüfen.
+- **ADFU verlassen:** antwortende Sitzung per RAM-Helfer zurücksetzen und Normalmodus prüfen.
+- **Player ausschalten:** eigenen RAM-Code laden und bytegleich zurücklesen.
+  Bei **„Start bestätigt. Jetzt USB-Kabel abziehen.“** USB abziehen. Erst danach
+  fordert der RAM-Loop das Ausschalten an. Es gibt keinen Countdown.
 
-Bei belegtem USB-Zugriff, fehlender Antwort oder unbestätigtem Reset erscheint
-eine Fehlermeldung. Es gibt keinen automatischen Wiederholungsversuch und keine
-Erfolgsmeldung allein aufgrund eines gesendeten Befehls. Ein hängendes Gerät
-kann weiterhin einen physischen Reset benötigen.
+Eine Startbestätigung ist keine Bestätigung des physischen Ausschaltens.
+Bei einem nicht antwortenden Gerät gibt es keinen automatischen Wiederholungsversuch.
+Bei Windows-Zugriff verweigert die App gegebenenfalls als Administrator starten.
 
-## Player über RAM ausschalten
+## Online-Flasher
 
-**Player ausschalten** wartet ab **Beta 7** im Player auf das Abziehen von USB:
+Die [Pages-Seite](https://netfreak25.github.io/DDMY-X6-Flasher/) bleibt verfügbar.
+App starten, Pages in Chrome/Edge öffnen und dort **Verbinden** wählen.
+Den Zugriff auf die lokale App erlauben; anschließend ADFU-X6 im WebUSB-Dialog
+auswählen. Nach einem längeren Wechsel einmal **USB-Zugriff erlauben** anklicken.
 
-1. Laufende Lese- oder Schreibvorgänge abschließen und eine bestehende
-   Browser-Verbindung über **Trennen** freigeben.
-2. **Player ausschalten** anklicken. Die App wechselt bei Bedarf nach ADFU,
-   lädt den enthaltenen Ausschaltcode in den RAM und liest ihn vollständig
-   zum Vergleich zurück. Erst bei Übereinstimmung wird er einmal aufgerufen.
-3. Sobald **„Start bestätigt. Jetzt USB-Kabel abziehen.“** erscheint, das
-   USB-Kabel abziehen. Die Schleife wartet ohne feste Zeitgrenze auf den Wegfall
-   der USB-Stromversorgung und bedient dabei den Watchdog. Erst danach werden
-   die Ausschaltwerte geschrieben.
+**Während der Browser verbunden ist, bleibt die native App für Geräteaufträge
+gesperrt.** Im Browser **Trennen** wählen, bevor zur Windows-App gewechselt wird.
+Vor Schließen/Neuladen der Seite ebenfalls trennen. Die Sperre läuft nicht
+zeitgesteuert ab, damit ein langer Schreibvorgang nicht unterbrochen wird.
 
-Es wird keine Firmware geschrieben. Bestätigt wird nur der Startauftrag;
-danach sendet der Helper keine weiteren USB-Befehle und wartet auf keinen
-Registerbericht. Solange der Loop wartet, kann der Player keine USB-Aufträge
-bearbeiten. Deshalb vor einer weiteren Geräteaktion zuerst das Kabel abziehen.
-Bei fehlender Startbestätigung gibt es keinen automatischen Wiederholungsversuch.
-Die physische Ausschaltwirkung dieses Build-Kandidaten ist auf Hardware
-unverifiziert. Während Upload und Start sind alle drei Gerätebuttons gesperrt.
+Wurde ein Tab unerwartet beendet und bleibt die Sperre bestehen: sicherstellen,
+dass kein Browserauftrag mehr läuft, alle X6-Tabs schließen und erst dann die
+X6-App nötigenfalls über den Task-Manager beenden und neu öffnen. Keine
+Geräteschreibbefehle werden dadurch automatisch wiederholt.
 
-## Sichern und Vergleichen
+Der lokale Port bietet ausschließlich die Kopplungs-API; eine Offline-Website
+gibt es nicht mehr. Ist der Port belegt, bleibt die native App verfügbar.
+Mehrere App-Instanzen werden zusätzlich über eine Windows-Dateisperre koordiniert.
 
-**Sicherung erstellen** speichert Bootdatensätze und Firmware als
-`.x6backup.zip`. Mediendaten und SD-Karte sind nicht enthalten. Unvollständige
-Sicherungen können gespeichert, aber nicht für Full Restore verwendet werden.
-Die Ergebnismeldung nennt ab Beta 5 Firmware und beide Bootkopien einzeln,
-einschließlich des jeweiligen Lesefehlers oder der fehlgeschlagenen Prüfung.
-Eine ungültige Boot-Prüfsumme kann auch bei vollständig gültigem LFI auftreten.
-Bei einem Speicherfehler bietet **Gelesene Sicherung speichern** die bereits
-gelesenen Daten erneut an. Bis dahin die Browserseite nicht schließen.
+## Fortschritt, Berichte und Dateien
 
-Eine LFI-`.bin` über **Datei auswählen** laden. Die Prüfung kontrolliert Größe,
-Header und alle 148 internen Dateiprüfsummen. **Vergleichen** liest anschließend
-den gesamten Firmwarebereich aus und zählt sämtliche abweichenden Bytes.
-Auch beschädigter Geräteinhalt kann damit verglichen werden.
+Der Fortschrittsbereich zeigt den aktuellen Schritt. Prozentwerte werden nur
+aus bestätigten Backend-Meldungen berechnet; ohne solche Meldungen läuft eine
+Schrittanzeige. **Details** und **Bericht speichern** enthalten technische Angaben.
 
-## LFI-Teilaktualisierung
+Private Arbeitsdateien: `%LOCALAPPDATA%\DDMY-X6-Flasher\private_dumps`.
+Dort bleiben Dumps und Laufprotokolle auch nach dem Schließen erhalten.
+Die App läuft nur, solange ihr Fenster geöffnet ist: kein Dienst, kein Autostart.
 
-Zur vollständigen angepassten Firmware gehören **BREC und LFI**. Für diese
-verwende ein passendes vollständiges Paket über **Sicherung wiederherstellen**.
-Der einzelne `.bin`-Flash aktualisiert ausschließlich den LFI-Bereich.
+**Full ist kein Rohdump aller 4 GB.** Gesichert werden MBREC, dessen zweite
+Rücklesung, beide BREC-Kopien und LFI. Musik und SD-Karte gehören nicht dazu.
 
-**Firmware flashen** bestätigen und den Speicherort der bisherigen Firmware
-wählen. Erst nach dem Speichern und lokalen Rücklesen dieser Sicherung wird
-geschrieben. Danach wird das vollständige Geräte-LFI zurückgelesen und
-byteweise verglichen. Der anschließende Neustart wird separat bestätigt.
+## Prüfstand
 
-## Full Restore
-
-Ein vollständiges Backup-ZIP oder einen bestehenden Toolkit-Sicherungsordner
-öffnen. Das Tool prüft Vollständigkeit, Hashes, Modell, NAND-Zuordnung und
-übereinstimmende Bootkopien. Ab Beta 8 wird BREC automatisch in einer separaten
-Übertragungskopie für den geprüften Treiber vorbereitet. Die Sicherung bleibt
-unverändert. Die Wirkung auf beide Bootkopien wurde im ursprünglichen Toolkit
-vollständig zurückgelesen; der normale Full Restore ist deshalb freigegeben.
-
-Eine Rücksicherung gilt nur dann als vollständig verifiziert, wenn LFI und
-beide Bootkopien bytegleich zum unveränderten Backup zurückgelesen wurden.
-Fehlende Boot-Rücklesung stoppt den normalen Restore ohne automatischen Neustart.
-Bei älteren Geräteprofilen ohne bestätigte Boot-Zuordnung bleibt die ausdrücklich
-zu bestätigende **Notfall-Wiederherstellung** verfügbar. Bei unbestätigten Schreibbefehlen
-stoppt jeder Ablauf ohne automatische Wiederholung.
-
-## Beenden und Berichte
-
-**Player starten** versucht die Rückkehr aus einer antwortenden ADFU-Sitzung
-und prüft den normalen USB-Modus. **Trennen** beendet lediglich den Zugriff
-des Browsers. **Details** zeigt technische Ergebnisse; **Bericht speichern**
-exportiert diese ausschließlich lokal.
-
-Nach Abschluss Browserseite und Windows-App schließen.
-
-## Grenzen der Beta
-
-Die Browserimplementierung und die neue portable App sind noch nicht mit
-einem echten X6 auf Hardware geprüft: **unverifizierter Build-Kandidat**.
-Automatisierte Tests verwenden simuliertes USB und künstlich erzeugte Daten.
-Der Name X6 allein ist keine Kompatibilitätszusage für andere OEM-Varianten.
+Version 0.2.0-beta.1: automatisiert und mit vorhandenen Dateien offline geprüft,
+**auf Hardware unverifizierter Build-Kandidat**. Für diese Version wurde der
+physische Player nicht angesprochen.

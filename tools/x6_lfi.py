@@ -12,6 +12,7 @@ LFI_DIRECTORY_START = 0x200
 LFI_DIRECTORY_END = 0x2000
 LFI_ENTRY_SIZE = 0x20
 SECTOR_SIZE = 512
+X6_FILE_COUNT = 148
 
 def u16(data: bytes, offset: int) -> int:
     """Read a little-endian unsigned 16-bit value."""

@@ -33,6 +33,15 @@ Unicorn wird ausschließlich für den ARM-Emulatortest verwendet und nicht mitge
 
 ## Windows-Paket
 
+Ab 0.2.0 enthält die native App zusätzlich das bestehende Actions-Backend
+`actions_dump.exe` und die dynamisch geladene `libusb-1.0.dll` 1.0.28.11946.
+Backend-Quelltext, Herkunft und Buildanleitung:
+[vendor/actions_flash](vendor/actions_flash/README.md).
+Die libusb-Lizenz LGPL-2.1-or-later liegt unter
+[vendor/libusb.LICENSE](vendor/libusb.LICENSE). Der vollständige offizielle
+libusb-Quelltext einschließlich Buildskripten wird im Source-ZIP derselben
+Release unter `vendor/libusb-1.0.28.tar.bz2` bereitgestellt.
+
 Die portable App wird mit Python 3.11, Tcl/Tk und PyInstaller 6.22.3 gebaut.
 Die jeweiligen Python- und Tcl/Tk-Lizenztexte sind der Windows-Release beigefügt.
 
