@@ -4,6 +4,7 @@ import dataclasses
 import hashlib
 import http.client
 import json
+import socket
 import sys
 import tempfile
 import threading
@@ -137,6 +138,47 @@ class WebBridgeTests(unittest.TestCase):
                 mock.patch.object(Path, "is_file", return_value=True):
             self.assertEqual(web.browser_path(), Path("chrome.exe"))
             self.assertTrue(key.call_args.args[1].endswith("chrome.exe"))
+
+    def test_second_helper_cannot_share_the_listening_port(self):
+        with self.assertRaisesRegex(toolkit.ToolkitError, "Port"), \
+                web.WebServer(self.server.server_port, self.server.profile, self.runtime):
+            pass
+
+    @unittest.skipUnless(hasattr(socket, "SO_EXCLUSIVEADDRUSE"), "Windows socket semantics")
+    def test_legacy_reuseaddr_listener_cannot_share_a_new_helper_port(self):
+        with socket.socket() as legacy:
+            legacy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            with self.assertRaises(OSError):
+                legacy.bind(self.server.server_address)
+
+    @unittest.skipUnless(hasattr(socket, "SO_EXCLUSIVEADDRUSE"), "Windows socket semantics")
+    def test_helper_rejects_port_already_owned_by_legacy_reuseaddr_server(self):
+        with socket.socket() as legacy:
+            legacy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            legacy.bind(("127.0.0.1", 0))
+            legacy.listen()
+            with self.assertRaisesRegex(toolkit.ToolkitError, "Port"), \
+                    web.WebServer(legacy.getsockname()[1], self.server.profile, self.runtime):
+                pass
+
+    def test_packaged_http_check_never_probes_and_port_can_reopen_after_shutdown(self):
+        from x6_helper import check_http_bridge
+
+        with mock.patch.object(toolkit, "probe_device") as probe, mock.patch.object(toolkit, "enter_adfu") as enter:
+            server = web.WebServer(0, self.server.profile, self.runtime, online=True)
+            port = server.server_port
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                self.assertEqual(check_http_bridge(server), {"preflight_status": 204, "pair_status": 200})
+            finally:
+                server.shutdown()
+                server.server_close()
+                worker.join()
+            with web.WebServer(port, self.server.profile, self.runtime):
+                pass
+            probe.assert_not_called()
+            enter.assert_not_called()
 
 
 if __name__ == "__main__":

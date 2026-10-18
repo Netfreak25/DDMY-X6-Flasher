@@ -42,6 +42,9 @@ keinen Autostart und bleibt nach dem Schließen nicht im Hintergrund aktiv.
 Die Schaltfläche **Offline öffnen** verwendet die mitgelieferte lokale Website.
 Für die direkte Kopplung aus einem Pages-Tab ist mindestens **Helper Beta 2**
 erforderlich. Zum Aktualisieren die alte App schließen und die neue EXE starten.
+Ab **Beta 3** belegt die App ihren lokalen Port exklusiv. Läuft bereits ein
+Helper oder alter X6-Webstarter auf diesem Port, wird der zweite Start mit
+einer verständlichen Meldung beendet.
 
 Voraussetzungen: Windows 10/11 (64 Bit), Chrome oder Edge und WinUSB für das
 ADFU-Gerät `10D6:10D6`. Der normale USB-Massenspeichertreiber bleibt bestehen.
@@ -129,6 +132,10 @@ und die sechs freigegebenen Hilfsdateien im lokalen Runtime-Verzeichnis benötig
 ```text
 python tools/build_helper.py
 ```
+
+Der Build startet anschließend die erzeugte EXE in einem hardwarefreien
+Selbsttest. Dieser prüft die mitgelieferten Hilfsdateien, Fenstericons und
+die tatsächlichen HTTP-Antworten für CORS-Vorabfrage und Sitzungskopplung.
 
 Die Build-Ausgabe bleibt unter dem ignorierten Verzeichnis `private_dumps/`.
 Abhängigkeiten und Hinweise: [THIRD_PARTY.md](THIRD_PARTY.md).

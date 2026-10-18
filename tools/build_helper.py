@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -10,6 +11,7 @@ import x6_toolkit as toolkit
 import x6_web as web
 
 ROOT = Path(__file__).resolve().parents[1]
+SELF_TEST_TIMEOUT_S = 30
 
 
 def build() -> None:
@@ -37,6 +39,12 @@ def build() -> None:
         command.extend(["--add-data", f"{path}:runtime"])
     command.append(str(ROOT / "tools/x6_helper.py"))
     subprocess.run(command, cwd=ROOT, check=True)
+    report = output / "self-test.json"
+    subprocess.run([str(output / "DDMY X6 Helper.exe"), "--self-test", str(report)],
+                   check=True, timeout=SELF_TEST_TIMEOUT_S)
+    result = json.loads(report.read_text(encoding="utf-8"))
+    if result.get("ok") is not True or result.get("http_pairing") != {"preflight_status": 204, "pair_status": 200}:
+        raise toolkit.ToolkitError(f"Die erzeugte EXE hat ihren HTTP-/Fenster-Selbsttest nicht bestanden: {result}")
 
 
 if __name__ == "__main__":

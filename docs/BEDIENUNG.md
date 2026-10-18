@@ -16,6 +16,11 @@ Ab **Beta 2** kann die Pages-Seite auch direkt in einem vorhandenen Chrome-Tab
 geöffnet werden. Die App muss lediglich laufen. Die Version steht im App-Fenster;
 zum Aktualisieren die alte App schließen und die neue EXE starten.
 
+Ab **Beta 3** verhindert die App, dass mehrere X6-Webstarter denselben lokalen
+Port verwenden. Meldet die App einen belegten Port, die bereits laufende
+X6-App beziehungsweise alte X6-Webstarter schließen. Die neue App beginnt
+in diesem Fall keinen Gerätezugriff.
+
 ## Verbinden
 
 1. Den X6 per USB anschließen.

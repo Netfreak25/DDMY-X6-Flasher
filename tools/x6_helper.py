@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import http.client
 import json
 import os
 import subprocess
@@ -12,6 +13,7 @@ import tkinter as tk
 from ctypes import wintypes
 from pathlib import Path
 from tkinter import messagebox
+from urllib.parse import urlsplit
 
 import x6_toolkit as toolkit
 import x6_web as web
@@ -20,6 +22,33 @@ APP_ID = "Netfreak25.DDMYX6.Flasher.Helper"
 BACKGROUND = "#f3f8f6"
 INK = "#173b36"
 TEAL = "#147d6c"
+HTTP_SELF_TEST_TIMEOUT_S = 5
+
+
+def check_http_bridge(server: web.WebServer) -> dict[str, int]:
+    """Exercise packaged HTTP preflight and pairing without accessing any USB API."""
+    site = urlsplit(server.pages_url)
+    origin = f"{site.scheme}://{site.netloc}"
+    checks = {}
+    requests = (
+        ("OPTIONS", {"Origin": origin, "Access-Control-Request-Method": "POST",
+                     "Access-Control-Request-Headers": "x-x6-pair"}, 204, "preflight_status"),
+        ("POST", {"Origin": origin, "X-X6-Pair": "1"}, 200, "pair_status"),
+    )
+    for method, headers, expected_status, label in requests:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=HTTP_SELF_TEST_TIMEOUT_S)
+        try:
+            connection.request(method, "/api/pair", headers=headers)
+            response = connection.getresponse()
+            body = response.read()
+            if response.status != expected_status or response.getheader("Access-Control-Allow-Origin") != origin:
+                raise toolkit.ToolkitError(f"HTTP-Selbsttest fehlgeschlagen: {method} /api/pair, Status {response.status}.")
+            if method == "POST" and json.loads(body) != {"origin": server.origin, "token": server.token}:
+                raise toolkit.ToolkitError("HTTP-Selbsttest: unpassende lokale Sitzung.")
+            checks[label] = response.status
+        finally:
+            connection.close()
+    return checks
 
 
 class HelperWindow:
@@ -95,6 +124,7 @@ def main() -> None:
         window = HelperWindow(root, server)
         root.update_idletasks()
         if args.self_test:
+            http_checks = check_http_bridge(server)
             # Windows attaches window icons when the window is mapped. Map it
             # outside the visible desktop for this hardware-free packaging test.
             root.geometry("+10000+10000")
@@ -108,7 +138,8 @@ def main() -> None:
             hwnd = user32.GetParent(root.winfo_id())
             icons = [bool(user32.SendMessageW(hwnd, 0x7F, size, 0)) for size in (0, 1)]
             args.self_test.write_text(json.dumps({"ok": all(icons), "helpers": list(web.PAYLOAD_NAMES),
-                                                 "window_icons": icons, "device_access": False}), encoding="utf-8")
+                                                 "window_icons": icons, "http_pairing": http_checks,
+                                                 "device_access": False}), encoding="utf-8")
             window.close()
             return
         root.deiconify()

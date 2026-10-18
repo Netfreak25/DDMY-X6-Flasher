@@ -9,6 +9,7 @@ import json
 import mimetypes
 import os
 import secrets
+import socket
 import subprocess
 import sys
 import threading
@@ -29,6 +30,7 @@ class WebServer(ThreadingHTTPServer):
     """Same-origin loopback service; never exposes firmware or arbitrary commands."""
 
     daemon_threads = True
+    allow_reuse_address = False
 
     def __init__(self, port: int, profile: toolkit.Profile, runtime: Path = DEFAULT_PAYLOADS, online: bool = False) -> None:
         self.profile = profile
@@ -46,6 +48,24 @@ class WebServer(ThreadingHTTPServer):
             if site.scheme != "https" or not site.hostname or site.username or site.password:
                 raise toolkit.ToolkitError("Ungültige HTTPS-Adresse in site.json.")
             self.allowed_origins.add(f"{site.scheme}://{site.netloc}")
+
+    def server_bind(self) -> None:
+        """Own the loopback port exclusively, including against legacy helpers.
+
+        HTTPServer enables SO_REUSEADDR by default. On Windows this allows
+        multiple listeners on one port and makes request routing indeterminate.
+        SO_EXCLUSIVEADDRUSE must be set before bind to prevent that collision.
+        """
+        try:
+            if os.name == "nt":
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            super().server_bind()
+        except OSError as error:
+            raise toolkit.ToolkitError(
+                f"Der lokale X6-Port {self.server_address[1]} ist nicht verfügbar. "
+                "Bitte bereits laufende X6-Apps oder alte X6-Webstarter schließen. "
+                f"Die App wurde nicht gestartet. Details: {error}"
+            ) from error
 
     def launch_url(self, online: bool) -> str:
         """Pass credentials in the URL fragment, never to the public web server."""
