@@ -17,6 +17,7 @@ from typing import Any
 
 import x6_lfi
 import x6_spti
+from x6_brec_transfer import prepare_transfer
 
 ROOT = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
 PRIVATE_ROOT = ROOT / "private_dumps"
@@ -450,6 +451,14 @@ def check_preserved_header(candidate: Path, current: Path, profile: Profile) -> 
 
 def write_area(backend: ActionsBackend, name: str, sector: str, path: Path) -> None:
     """Send every sector once and require final progress plus checked USB status."""
+    if sector == backend.profile.protocol["brec_sector"]:
+        try:
+            prepared = prepare_transfer(path.read_bytes(), backend.file("fwsc.bin").read_bytes(), backend.profile)
+        except ValueError as exc:
+            raise ToolkitError(f"BREC transfer preparation failed: {exc}") from exc
+        path = backend.log.directory / f"{name}-transfer.bin"
+        path.write_bytes(prepared)
+        backend.log.event("brec_transfer_prepared", sha256=sha256_file(path))
     size = path.stat().st_size
     if size == 0 or size % backend.profile.sector_size:
         raise ToolkitError(f"unaligned or empty flash input: {path}")

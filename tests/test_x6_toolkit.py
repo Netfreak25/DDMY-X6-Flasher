@@ -202,13 +202,14 @@ class X6ToolkitTests(unittest.TestCase):
 
     def test_full_restore_is_gated_before_usb_without_boot_mapping(self) -> None:
         """A normal restore cannot silently assume 0x46 mirrors both BREC copies."""
+        profile = dataclasses.replace(self.profile, boot_write_mapping_verified=False)
         with (
             tempfile.TemporaryDirectory(dir=toolkit.PRIVATE_ROOT) as temp,
             mock.patch.object(toolkit, "verify_bundle", return_value={"status": "complete"}),
             mock.patch.object(toolkit, "probe_device") as probe,
             self.assertRaisesRegex(toolkit.ToolkitError, "not verified"),
         ):
-            toolkit.restore_full(self.profile, toolkit.DEFAULT_RUNTIME, Path(temp), False)
+            toolkit.restore_full(profile, toolkit.DEFAULT_RUNTIME, Path(temp), False)
         probe.assert_not_called()
 
     def test_failed_dump_keeps_an_incomplete_manifest(self) -> None:

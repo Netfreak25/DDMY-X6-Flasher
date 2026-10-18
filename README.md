@@ -68,6 +68,12 @@ Ausschaltwerte. Während des Loops wird der Watchdog bedient; es gibt keinen
 festen Countdown und keine weiteren USB-Abfragen. Die Startbestätigung belegt
 kein physisches Ausschalten; dieser Build-Kandidat ist auf Hardware unverifiziert.
 
+Ab **Beta 8** verwendet Full Restore dieselbe BREC-Transportvorbereitung wie
+das korrigierte ursprüngliche Toolkit. Die Anpassung erfolgt automatisch in
+einer separaten Kopie; Rücklesevergleiche verwenden weiterhin das unveränderte
+Backup. Original- und angepasste BREC-Dateien ergeben in beiden Toolkits
+bytegleiche Übertragungsdaten.
+
 Voraussetzungen: Windows 10/11 (64 Bit), Chrome oder Edge und WinUSB für das
 ADFU-Gerät `10D6:10D6`. Der normale USB-Massenspeichertreiber bleibt bestehen.
 Bei einem Windows-Zugriffsfehler während des ADFU-Wechsels die App schließen
@@ -137,9 +143,10 @@ sind automatisiert mit simuliertem USB und künstlichen Testdaten geprüft. Der
 neue Browserweg, der native Reset-Button und die Ausschaltfunktion sind noch nicht am X6 auf Hardware bestätigt. Die bisherige
 native Flash-Routine wurde als Grundlage übernommen.
 
-Full Restore bleibt eine ausdrücklich zu bestätigende **Notfall-Wiederherstellung**:
-Die Wirkung des Boot-Schreibbefehls auf beide BREC-Kopien ist noch nicht vollständig
-belegt. Nur bytegleiches Rücklesen aller Bestandteile ergibt „vollständig verifiziert“.
+Die Wirkung des korrigierten Boot-Schreibwegs auf beide BREC-Kopien ist im
+ursprünglichen Toolkit durch vollständiges Rücklesen belegt. Ab Beta 8 ist daher
+der normale Full Restore freigegeben; er erfordert das bytegleiche Rücklesen
+aller Bestandteile. Der Browserweg selbst bleibt auf Hardware unverifiziert.
 
 ## Entwicklung
 

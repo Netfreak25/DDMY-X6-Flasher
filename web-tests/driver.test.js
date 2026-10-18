@@ -1,8 +1,42 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { X6Driver, bootLayout, brecLength } from '../lib/driver.js';
-import { view } from '../lib/formats.js';
+import { X6Driver, bootLayout, brecLength, prepareBrecTransfer } from '../lib/driver.js';
+import { sha256, view, wordSum } from '../lib/formats.js';
 import { profile, files, payload } from './fixtures.js';
+
+test('BREC writer prepares one transfer copy; original backup survives unchanged', async () => {
+  const original = files['brec0.bin'].slice(), saved = original.slice(), calls = [];
+  const driver = new X6Driver({writeFlash: async (sector, data) => calls.push({sector, data})}, profile, payload);
+  driver.mode = 'flash';
+  await driver.writeArea('brec', original);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].sector, Number(profile.protocol.brec_sector));
+  const transfer = calls[0].data, adjusted = transfer.slice();
+  const headerSum = wordSum(adjusted.subarray(4, 512), 2);
+  view(adjusted).setUint16(2, headerSum, true);
+  view(adjusted).setUint16(0, (view(adjusted).getUint16(0, true) + 2 * headerSum) & 0xffff, true);
+  assert.deepEqual(adjusted, original);
+  assert.deepEqual(original, saved);
+  assert.deepEqual(transfer.subarray(2), original.subarray(2));
+  assert.notDeepEqual(transfer, original);
+  await assert.rejects(driver.writeArea('brec', transfer), /checksum/);
+  const corrupt = original.slice(); corrupt[0x210] ^= 1;
+  await assert.rejects(driver.writeArea('brec', corrupt), /checksum/);
+  assert.equal(calls.length, 1);
+  await driver.writeArea('mbrec', files['mbrec.bin']);
+  assert.equal(calls[1].data, files['mbrec.bin']);
+});
+
+test('BREC preparation rejects a wrong driver or invalid finalized header', async () => {
+  const original = files['brec0.bin'].slice(), code = (await payload('fwsc.bin')).slice();
+  code[0x4c2] ^= 1;
+  await assert.rejects(prepareBrecTransfer(original, code, profile), /FWSC-Hash/);
+  const changed = {...profile, runtime_sha256: {...profile.runtime_sha256, 'fwsc.bin': await sha256(code)}};
+  await assert.rejects(prepareBrecTransfer(original, code, changed), /Prüfsummenroutine/);
+  original[2] ^= 1;
+  view(original).setUint16(0, (wordSum(original.subarray(2, 65536), 2) + 0x1234) & 0xffff, true);
+  await assert.rejects(prepareBrecTransfer(original, await payload('fwsc.bin'), profile), /Headerprüfsumme/);
+});
 
 test('synthetic BREC checksum and size, MBREC copy addressing match native algorithm', async () => {
   const mbrec = files['mbrec.bin'].slice();

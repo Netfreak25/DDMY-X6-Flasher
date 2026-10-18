@@ -130,12 +130,16 @@ byteweise verglichen. Der anschließende Neustart wird separat bestätigt.
 
 Ein vollständiges Backup-ZIP oder einen bestehenden Toolkit-Sicherungsordner
 öffnen. Das Tool prüft Vollständigkeit, Hashes, Modell, NAND-Zuordnung und
-übereinstimmende Bootkopien. Der derzeitige Boot-Schreibweg verlangt die
-Checkbox **Notfall-Wiederherstellung**.
+übereinstimmende Bootkopien. Ab Beta 8 wird BREC automatisch in einer separaten
+Übertragungskopie für den geprüften Treiber vorbereitet. Die Sicherung bleibt
+unverändert. Die Wirkung auf beide Bootkopien wurde im ursprünglichen Toolkit
+vollständig zurückgelesen; der normale Full Restore ist deshalb freigegeben.
 
 Eine Rücksicherung gilt nur dann als vollständig verifiziert, wenn LFI und
-beide Bootkopien bytegleich zurückgelesen wurden. Fehlende Boot-Rücklesung
-wird ausdrücklich als offen ausgewiesen. Bei unbestätigten Schreibbefehlen
+beide Bootkopien bytegleich zum unveränderten Backup zurückgelesen wurden.
+Fehlende Boot-Rücklesung stoppt den normalen Restore ohne automatischen Neustart.
+Bei älteren Geräteprofilen ohne bestätigte Boot-Zuordnung bleibt die ausdrücklich
+zu bestätigende **Notfall-Wiederherstellung** verfügbar. Bei unbestätigten Schreibbefehlen
 stoppt jeder Ablauf ohne automatische Wiederholung.
 
 ## Beenden und Berichte

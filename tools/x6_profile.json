@@ -13,7 +13,7 @@
   "write_delay_ms": 25,
   "usb_timeout_ms": 30000,
   "mode_timeout_s": 90,
-  "boot_write_mapping_verified": false,
+  "boot_write_mapping_verified": true,
   "protocol": {
     "adfus_address": "0x118000",
     "work_address": "0x11e000",

@@ -61,6 +61,7 @@ test('backup-wide validation errors and missing steps remain visible in the resu
 
 test('normal restore gate and uncertain MBREC write stop before BREC/LFI', async () => {
   const {driver, operations, calls} = fixture();
+  operations.profile = {...profile, boot_write_mapping_verified: false};
   await assert.rejects(operations.restore(files), /Notfallmodus/);
   assert.deepEqual(calls, []);
   driver.writeArea = async name => {calls.push(name); throw new Error('unconfirmed');};
@@ -84,12 +85,16 @@ test('interrupted firmware dump saves the confirmed prefix as incomplete without
 
 test('full restore only reports boot verification after both copies match; unreadable boot does not reset', async () => {
   let f = fixture();
-  const result = await f.operations.restore(files, true);
+  const result = await f.operations.restore(files);
   assert.equal(result.bootVerified, true);
   assert.deepEqual(f.calls, ['driver', 'mbrec', 'brec', 'lfi', 'final', 'read', 'boot0', 'boot1', 'reset']);
   f = fixture();
   f.driver.readBoot = async () => {throw new Error('timeout');};
   assert.equal((await f.operations.restore(files, true)).bootVerified, false);
+  assert.ok(!f.calls.includes('reset'));
+  f = fixture();
+  f.driver.readBoot = async () => {throw new Error('timeout');};
+  await assert.rejects(f.operations.restore(files), /Boot-Rücklesung fehlgeschlagen/);
   assert.ok(!f.calls.includes('reset'));
 });
 

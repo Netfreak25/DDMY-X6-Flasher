@@ -36,17 +36,20 @@ after(async () => {
   if (server && server.exitCode === null) {const stopped = once(server, 'exit'); server.kill(); await stopped;}
 });
 
-async function pageFixture() {
+async function pageFixture(bootMapping = profile.boot_write_mapping_verified) {
   const context = await browser.newContext({viewport: {width: 1280, height: 1120}, serviceWorkers: 'block'});
   const page = await context.newPage(), errors = [], apiCalls = [];
   page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/tools/x6_profile.json', route => route.fulfill({
+    json: {...profile, boot_write_mapping_verified: bootMapping},
+  }));
   let mode = 'normal';
   // Every API URL is fulfilled or aborted here; no status/ADFU request reaches Python.
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     apiCalls.push(path);
     if (path === '/api/pair') return route.fulfill({json: {origin: new URL(route.request().url()).origin, token: 'mock-session'}});
-    if (path === '/api/profile') return route.fulfill({json: profile});
+    if (path === '/api/profile') return route.fulfill({json: {...profile, boot_write_mapping_verified: bootMapping}});
     if (path === '/api/status') return route.fulfill({json: {mode, serial: 'X6TEST000001'}});
     if (path === '/api/enter-adfu') {mode = 'adfu'; return route.fulfill({json: {mode}});}
     if (path === '/api/test-normal') {mode = 'normal'; return route.fulfill({json: {mode}});}
@@ -266,8 +269,8 @@ test('flash uses confirmation, saves before writing and shows verified restart',
   await context.close();
 });
 
-test('incomplete dump remains downloadable and full restore requires its explicit emergency checkbox', async () => {
-  const {page, context, errors} = await pageFixture();
+test('incomplete dump remains downloadable and an unverified mapping requires the emergency checkbox', async () => {
+  const {page, context, errors} = await pageFixture(false);
   await connect(page);
   await page.evaluate(() => {window.__badBoot = true;});
   await page.locator('#dump').click();
@@ -286,6 +289,23 @@ test('incomplete dump remains downloadable and full restore requires its explici
   await page.locator('#confirm-go').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Firmware verifiziert, Boot-Rücklesung offen.');
   assert.ok(!(await page.evaluate(() => window.__calls)).includes('reset'));
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('verified boot mapping permits normal restore and requires complete readback', async () => {
+  const {page, context, errors} = await pageFixture();
+  await connect(page);
+  await page.locator('#backup-file').setInputFiles('private_dumps/web-tests/synthetic.x6backup.zip');
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Sicherung ist vollständig.');
+  await page.evaluate(() => {window.__calls = [];});
+  await page.locator('#restore').click();
+  await page.locator('#confirmation').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#emergency-option').isHidden(), true);
+  assert.equal(await page.locator('#confirm-go').isEnabled(), true);
+  await page.locator('#confirm-go').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vollständig zurückgeschrieben und verifiziert.');
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['driver', 'mbrec', 'brec', 'lfi', 'final', 'read', 'boot0', 'boot1', 'reset']);
   assert.deepEqual(errors, []);
   await context.close();
 });

@@ -24,6 +24,7 @@ view(mbrec).setUint16(0x0e, 8192, true);
 view(brec).setUint16(4, 128, true);
 view(brec).setUint16(6, brec.length / 512, true);
 brec.set([0x2c, 0x68, 4, 0x4a, 0xa9], 0x80);
+view(brec).setUint16(2, wordSum(brec.subarray(4, 512), 2), true);
 view(brec).setUint16(0, (wordSum(brec.subarray(2, 65536), 2) + 0x1234) & 0xffff, true);
 export const files = {'lfi.bin': candidate, 'mbrec.bin': mbrec, 'mbrec_copy.bin': mbrec.slice(),
   'brec0.bin': brec, 'brec1.bin': brec.slice()};
@@ -33,6 +34,10 @@ files['manifest.json'] = encodeManifest(manifest);
 const helpers = {};
 for (const name of Object.keys(profile.runtime_sha256)) {
   helpers[name] = new Uint8Array(512).fill(name.length);
+  if (name === 'fwsc.bin') {
+    helpers[name] = new Uint8Array(0x4d4);
+    helpers[name].set(Uint8Array.from('fe21201d03f09ffa6080218801eb40002080'.match(/../g), value => parseInt(value, 16)), 0x4c2);
+  }
   profile.runtime_sha256[name] = await sha256(helpers[name]);
 }
 export const payload = async name => helpers[name];
