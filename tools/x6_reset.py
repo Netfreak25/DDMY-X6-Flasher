@@ -27,6 +27,9 @@ INFO_SIGNATURE = bytes.fromhex("004341444655443051")
 WRITE_RAM = 0x13
 READ_RAM = 0x93
 SWITCH = 0x20
+EXECUTE = 0x21
+RETURN_SIZE = 0x22
+READ_RETURN = 0x23
 SWITCH_DELAY_S = 0.010
 PIPE_TRANSFER_TIMEOUT = 3
 USB_BULK = 2
@@ -210,7 +213,8 @@ class ResetSession:
 
     def command(self, command: int, address: int, length: int = 0, outgoing: bytes = b"") -> bytes:
         cdb = struct.pack("<BIII3x", 0xCD, command, length, address)
-        return self.transaction(cdb, length if command == READ_RAM else 0, outgoing)
+        # READ_RAM plus the native EXEC return-size and return-data commands.
+        return self.transaction(cdb, length if command in (READ_RAM, RETURN_SIZE, READ_RETURN) else 0, outgoing)
 
     def bootstrap(self, payload: bytes) -> None:
         """Reuse matching ADFUS RAM; only the ROM accepts the INFO command."""
@@ -242,6 +246,16 @@ class ResetSession:
             raise toolkit.ToolkitError(f"Reset wurde nicht bestätigt. Kein automatischer Wiederholungsversuch. {error}") from error
 
 
+def open_adfu(profile: toolkit.Profile, device: toolkit.Device) -> WindowsUsb:
+    """Open only the selected X6 ADFU instance with exclusive WinUSB access."""
+    if device.mode != "adfu" or not device.instance_id:
+        raise toolkit.ToolkitError("Kein X6 im ADFU-Modus gefunden.")
+    parts = device.instance_id.upper().split("\\")
+    if len(parts) != 3 or parts[0] != "USB" or parts[1] != profile.adfu_usb_id.upper():
+        raise toolkit.ToolkitError("Unpassende ADFU-Gerätekennung; Zugriff abgebrochen.")
+    return WindowsUsb(device.instance_id, profile.usb_timeout_ms)
+
+
 def leave_adfu(profile: toolkit.Profile, payload: bytes) -> str:
     """Called only by the helper button; success requires normal USB enumeration."""
     if len(payload) < profile.sector_size or hashlib.sha256(payload).hexdigest() != profile.runtime_sha256["adfus.bin"]:
@@ -249,12 +263,7 @@ def leave_adfu(profile: toolkit.Profile, payload: bytes) -> str:
     device = toolkit.probe_device(profile)
     if device.mode == "normal":
         return "Der X6 ist bereits im Normalmodus."
-    if device.mode != "adfu" or not device.instance_id:
-        raise toolkit.ToolkitError("Kein X6 im ADFU-Modus gefunden.")
-    parts = device.instance_id.upper().split("\\")
-    if len(parts) != 3 or parts[0] != "USB" or parts[1] != profile.adfu_usb_id.upper():
-        raise toolkit.ToolkitError("Unpassende ADFU-Gerätekennung; Reset abgebrochen.")
-    usb = WindowsUsb(device.instance_id, profile.usb_timeout_ms)
+    usb = open_adfu(profile, device)
     try:
         ResetSession(usb, profile).reset(payload)
     finally:

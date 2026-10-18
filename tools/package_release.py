@@ -15,6 +15,7 @@ ROOT_FILES = {".gitignore", ".nojekyll", "README.md", "THIRD_PARTY.md", "site.js
 TEXT_FOLDERS = {"tools", "tests", "web-tests", "lib", "vendor", "docs"}
 TEXT_SUFFIXES = {".py", ".js", ".ps1", ".json", ".md", ".txt", ".LICENSE"}
 APP_ASSETS = {"assets/x6-icon.svg", "assets/x6-icon.ico", "assets/x6-icon.png", "assets/ddmy-x6-detail.png"}
+RAM_SOURCES = {"tools/x6_poweroff.c", "tools/x6_ram.ld"}
 
 
 def allowed_source(name: str) -> bool:
@@ -22,7 +23,7 @@ def allowed_source(name: str) -> bool:
     path = PurePosixPath(name)
     if path.is_absolute() or ".." in path.parts or "private_dumps" in path.parts:
         return False
-    return name in ROOT_FILES or name in APP_ASSETS or (
+    return name in ROOT_FILES or name in APP_ASSETS or name in RAM_SOURCES or (
         len(path.parts) > 1 and path.parts[0] in TEXT_FOLDERS and path.suffix in TEXT_SUFFIXES
     )
 

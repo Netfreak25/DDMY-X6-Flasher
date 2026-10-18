@@ -16,6 +16,7 @@ from pathlib import Path
 from tkinter import messagebox
 from urllib.parse import urlsplit
 
+import x6_poweroff
 import x6_reset
 import x6_toolkit as toolkit
 import x6_web as web
@@ -26,6 +27,11 @@ INK = "#173b36"
 TEAL = "#147d6c"
 HTTP_SELF_TEST_TIMEOUT_S = 5
 UI_POLL_MS = 100
+DEVICE_ACTIONS = {
+    "enter": ("ADFU betreten", "X6 wechselt nach ADFU …", "ADFU-Wechsel nicht bestätigt"),
+    "leave": ("ADFU verlassen", "X6 wird neu gestartet …", "Neustart nicht bestätigt"),
+    "poweroff": ("Player ausschalten", "Ausschaltcode wird geladen und geprüft …", "Ausschaltaufruf nicht bestätigt"),
+}
 
 
 def check_http_bridge(server: web.WebServer) -> dict[str, int]:
@@ -65,7 +71,7 @@ class HelperWindow:
         self.thread = threading.Thread(target=server.serve_forever, daemon=True)
         self.thread.start()
         root.title("DDMY X6 · Flasher")
-        root.geometry("500x440")
+        root.geometry("500x540")
         root.resizable(False, False)
         root.configure(background=BACKGROUND)
         self.icon = tk.PhotoImage(file=str(toolkit.ROOT / "assets" / "x6-icon.png"))
@@ -86,7 +92,7 @@ class HelperWindow:
                  fg=TEAL, bg=BACKGROUND, wraplength=440, justify="left").pack(anchor="w", pady=(25, 10))
         tk.Label(panel, text="Dieses Fenster während des Flashens geöffnet lassen.\n"
                  "Deine Dateien bleiben auf deinem Rechner.\nGerätezugriff erst mit „Verbinden“ im Flasher\n"
-                 "oder mit den ADFU-Tasten in dieser App.",
+                 "oder mit den Geräteaktionen in dieser App.",
                  justify="left", font=("Segoe UI", 10), fg=INK, bg=BACKGROUND).pack(anchor="w")
         actions = tk.Frame(panel, bg=BACKGROUND)
         actions.pack(fill="x", pady=(25, 0))
@@ -106,6 +112,12 @@ class HelperWindow:
                                       font=("Segoe UI", 11, "bold"), bg="white", fg=TEAL,
                                       activebackground="#e2efea", relief="flat", cursor="hand2", padx=20, pady=10)
         self.reset_button.pack(side="left")
+        self.poweroff_button = tk.Button(panel, text="Player ausschalten", command=self.power_off,
+                                         font=("Segoe UI", 11, "bold"), bg="white", fg=INK,
+                                         activebackground="#e2efea", relief="flat", cursor="hand2", padx=20, pady=10)
+        self.poweroff_button.pack(anchor="w", pady=(15, 0))
+        tk.Label(panel, text="RAM-Funktion · USB kann das Gerät weiter versorgen.",
+                 font=("Segoe UI", 9), fg="#607771", bg=BACKGROUND).pack(anchor="w", pady=(6, 0))
         root.protocol("WM_DELETE_WINDOW", self.close)
 
     def open_browser(self, online: bool) -> None:
@@ -117,37 +129,42 @@ class HelperWindow:
 
     def enter_adfu(self) -> None:
         """Use the existing Windows SCSI switch without opening a website."""
-        self._start_switch(entering=True)
+        self._start_switch("enter")
 
     def leave_adfu(self) -> None:
         """Use the native WinUSB reset without opening a website."""
-        self._start_switch(entering=False)
+        self._start_switch("leave")
 
-    def _start_switch(self, entering: bool) -> None:
-        """Serialize both buttons with each other and the web bridge switch."""
+    def power_off(self) -> None:
+        """Load, verify and execute the RAM power-off routine on explicit click."""
+        self._start_switch("poweroff")
+
+    def _start_switch(self, action: str) -> None:
+        """Serialize all device buttons with each other and the web bridge switch."""
         if self.switch_running:
             return
         if not self.server.switch_lock.acquire(blocking=False):
-            messagebox.showinfo("X6 wird verwendet", "Ein ADFU-Wechsel läuft bereits. Bitte dessen Ende abwarten.", parent=self.root)
+            messagebox.showinfo("X6 wird verwendet", "Ein Geräteauftrag läuft bereits. Bitte dessen Ende abwarten.", parent=self.root)
             return
         self.switch_running = True
-        self.switch_title = "ADFU betreten" if entering else "ADFU verlassen"
-        self.switch_error = "ADFU-Wechsel nicht bestätigt" if entering else "Neustart nicht bestätigt"
-        self.enter_button.configure(state="disabled")
-        self.reset_button.configure(state="disabled")
-        self.status.set("X6 wechselt nach ADFU …" if entering else "X6 wird neu gestartet …")
-        self.switch_worker = threading.Thread(target=self._switch_device, args=(entering,), daemon=True)
+        self.switch_title, progress, self.switch_error = DEVICE_ACTIONS[action]
+        for button in (self.enter_button, self.reset_button, self.poweroff_button):
+            button.configure(state="disabled")
+        self.status.set(progress)
+        self.switch_worker = threading.Thread(target=self._switch_device, args=(action,), daemon=True)
         self.switch_worker.start()
         self.root.after(UI_POLL_MS, self._poll_switch)
 
-    def _switch_device(self, entering: bool) -> None:
+    def _switch_device(self, action: str) -> None:
         """Only the worker touches USB; all widget updates stay on the Tk thread."""
         try:
-            if entering:
+            if action == "enter":
                 device = toolkit.enter_adfu(self.server.profile)
                 if device.mode != "adfu":
                     raise toolkit.ToolkitError("Der X6 wurde nicht im ADFU-Modus erkannt.")
                 result = "X6 im ADFU-Modus erkannt."
+            elif action == "poweroff":
+                result = x6_poweroff.power_off(self.server.profile, self.server.runtime)
             else:
                 result = x6_reset.leave_adfu(self.server.profile, self.server.payload("adfus.bin"))
             self.switch_results.put((True, result))
@@ -164,15 +181,15 @@ class HelperWindow:
             self.root.after(UI_POLL_MS, self._poll_switch)
             return
         self.switch_running = False
-        self.enter_button.configure(state="normal")
-        self.reset_button.configure(state="normal")
+        for button in (self.enter_button, self.reset_button, self.poweroff_button):
+            button.configure(state="normal")
         self.status.set(message if success else self.switch_error)
         if not success:
             messagebox.showerror(self.switch_title, message, parent=self.root)
 
     def close(self) -> None:
         if self.switch_running:
-            messagebox.showinfo("ADFU-Wechsel läuft", "Bitte das Ergebnis des laufenden ADFU-Wechsels abwarten.", parent=self.root)
+            messagebox.showinfo("Geräteauftrag läuft", "Bitte das Ergebnis des laufenden Geräteauftrags abwarten.", parent=self.root)
             return
         self.server.shutdown()
         self.server.server_close()
@@ -196,6 +213,7 @@ def main() -> None:
         server = web.WebServer(0 if args.self_test else web.DEFAULT_PORT, toolkit.Profile.load(), online=True)
         for name in web.PAYLOAD_NAMES:
             server.payload(name)
+        poweroff_payload = x6_poweroff.load_payload(server.profile, server.runtime)
         window = HelperWindow(root, server)
         root.update_idletasks()
         if args.self_test:
@@ -214,10 +232,18 @@ def main() -> None:
             icons = [bool(user32.SendMessageW(hwnd, 0x7F, size, 0)) for size in (0, 1)]
             reset_button = window.reset_button.cget("text") == "ADFU verlassen" and window.reset_button.cget("state") == "normal"
             enter_button = window.enter_button.cget("text") == "ADFU betreten" and window.enter_button.cget("state") == "normal"
-            args.self_test.write_text(json.dumps({"ok": all(icons) and reset_button and enter_button, "helpers": list(web.PAYLOAD_NAMES),
+            poweroff_button = window.poweroff_button.cget("text") == "Player ausschalten" and window.poweroff_button.cget("state") == "normal"
+            buttons_fit = all(button.winfo_rooty() + button.winfo_height() <= root.winfo_rooty() + root.winfo_height()
+                              and button.winfo_rootx() + button.winfo_width() <= root.winfo_rootx() + root.winfo_width()
+                              for button in (window.enter_button, window.reset_button, window.poweroff_button))
+            args.self_test.write_text(json.dumps({"ok": all(icons) and reset_button and enter_button and poweroff_button and buttons_fit,
+                                                 "helpers": list(web.PAYLOAD_NAMES),
                                                  "window_icons": icons, "http_pairing": http_checks,
                                                  "reset_button": reset_button,
                                                  "enter_button": enter_button,
+                                                 "poweroff_button": poweroff_button,
+                                                 "poweroff_payload_size": len(poweroff_payload),
+                                                 "buttons_fit": buttons_fit,
                                                  "device_access": False}), encoding="utf-8")
             window.close()
             return

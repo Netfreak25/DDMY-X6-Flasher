@@ -23,12 +23,15 @@ class HelperResetTests(unittest.TestCase):
         self.leave = self.reset.start()
         self.entry = mock.patch.object(helper.toolkit, "enter_adfu", return_value=helper.toolkit.Device("adfu"))
         self.enter = self.entry.start()
+        self.off_patch = mock.patch.object(helper.x6_poweroff, "power_off", return_value="Ausschaltcode ausgeführt. USB ggf. abziehen.")
+        self.off = self.off_patch.start()
         self.window = helper.HelperWindow(self.root, self.server)
 
     def tearDown(self):
         self.window.close()
         self.reset.stop()
         self.entry.stop()
+        self.off_patch.stop()
         self.probe.stop()
 
     def finish_worker(self):
@@ -39,6 +42,7 @@ class HelperResetTests(unittest.TestCase):
     def test_passive_start_and_button_runs_without_browser(self):
         self.leave.assert_not_called()
         self.enter.assert_not_called()
+        self.off.assert_not_called()
         with mock.patch.object(helper.subprocess, "Popen") as browser:
             self.window.reset_button.invoke()
             self.finish_worker()
@@ -55,6 +59,8 @@ class HelperResetTests(unittest.TestCase):
             self.window.leave_adfu()
             self.window.leave_adfu()
             self.window.enter_adfu()
+            self.window.power_off()
+            self.assertEqual(self.window.poweroff_button.cget("state"), "disabled")
             self.assertEqual(self.window.enter_button.cget("state"), "disabled")
             self.assertEqual(self.window.reset_button.cget("state"), "disabled")
             with mock.patch.object(helper.messagebox, "showinfo") as message:
@@ -66,6 +72,7 @@ class HelperResetTests(unittest.TestCase):
             self.finish_worker()
         self.assertEqual(self.leave.call_count, 1)
         self.enter.assert_not_called()
+        self.off.assert_not_called()
 
     def test_busy_bridge_does_not_start_reset(self):
         self.server.switch_lock.acquire()
@@ -73,9 +80,11 @@ class HelperResetTests(unittest.TestCase):
             with mock.patch.object(helper.messagebox, "showinfo") as message:
                 self.window.reset_button.invoke()
                 self.window.enter_button.invoke()
-                self.assertEqual(message.call_count, 2)
+                self.window.poweroff_button.invoke()
+                self.assertEqual(message.call_count, 3)
             self.leave.assert_not_called()
             self.enter.assert_not_called()
+            self.off.assert_not_called()
         finally:
             self.server.switch_lock.release()
 
@@ -116,6 +125,29 @@ class HelperResetTests(unittest.TestCase):
             self.assertEqual(self.window.status.get(), "ADFU-Wechsel nicht bestätigt")
             self.assertFalse(self.server.switch_lock.locked())
             self.assertEqual(self.window.enter_button.cget("state"), "normal")
+
+    def test_poweroff_button_runs_native_function_and_reports_usb_limit(self):
+        with mock.patch.object(helper.subprocess, "Popen") as browser:
+            self.window.poweroff_button.invoke()
+            self.finish_worker()
+            browser.assert_not_called()
+        self.off.assert_called_once_with(self.server.profile, self.server.runtime)
+        self.leave.assert_not_called()
+        self.enter.assert_not_called()
+        self.assertIn("USB ggf. abziehen", self.window.status.get())
+        self.assertEqual(self.window.poweroff_button.cget("state"), "normal")
+
+    def test_poweroff_failure_is_not_retried_or_shown_as_power_loss(self):
+        self.off.side_effect = helper.toolkit.ToolkitError("Ausschaltaufruf nicht bestätigt")
+        with mock.patch.object(helper.messagebox, "showerror") as message:
+            self.window.poweroff_button.invoke()
+            self.finish_worker()
+            message.assert_called_once_with("Player ausschalten", "Ausschaltaufruf nicht bestätigt", parent=self.root)
+        self.off.assert_called_once()
+        self.assertEqual(self.window.status.get(), "Ausschaltaufruf nicht bestätigt")
+        self.assertFalse(self.server.switch_lock.locked())
+        for button in (self.window.enter_button, self.window.reset_button, self.window.poweroff_button):
+            self.assertEqual(button.cget("state"), "normal")
 
 
 if __name__ == "__main__":

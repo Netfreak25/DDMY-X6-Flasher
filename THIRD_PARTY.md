@@ -20,9 +20,14 @@ Der Haftungshinweis aus der ursprünglichen C-Quelle lautet:
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 > THE SOFTWARE.
 
-Die Windows-Release enthält ausschließlich die sechs im Geräteprofil per
+Die Windows-Release enthält die sechs im Geräteprofil per
 SHA-256 festgelegten generischen Hilfsdateien. Darunter sind der X6-NAND-Treiber
 und dessen Konfiguration; es wird keine vollständige Firmware verteilt.
+
+Ab Beta 6 enthält die App zusätzlich unseren eigenen RAM-Ausschaltcode aus
+`tools/x6_poweroff.c`. Dieser wird mit ARM GCC gebaut, per SHA-256 geprüft und
+greift nicht auf NAND oder SD zu. Quelltext und Linkerskript sind enthalten.
+Unicorn wird ausschließlich für den ARM-Emulatortest verwendet und nicht mitgeliefert.
 
 ## Windows-Paket
 

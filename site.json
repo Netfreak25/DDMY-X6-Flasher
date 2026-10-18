@@ -4,6 +4,6 @@
   "pages_url": "https://netfreak25.github.io/DDMY-X6-Flasher/",
   "helper_origin": "http://127.0.0.1:8765",
   "helper_timeout_ms": 30000,
-  "helper_download": "https://github.com/Netfreak25/DDMY-X6-Flasher/releases/download/v0.1.0-beta.5/DDMY-X6-Flasher-Windows-Helper.zip",
-  "version": "0.1.0-beta.5"
+  "helper_download": "https://github.com/Netfreak25/DDMY-X6-Flasher/releases/download/v0.1.0-beta.6/DDMY-X6-Flasher-Windows-Helper.zip",
+  "version": "0.1.0-beta.6"
 }

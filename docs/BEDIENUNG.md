@@ -8,7 +8,8 @@ Chrome, falls installiert, sonst Edge. Das Fenster während der Verwendung offen
 schließen. Es gibt keinen Windows-Dienst, Autostart oder Hintergrundbetrieb
 nach dem Schließen.
 
-Die EXE enthält Python und die sechs generischen RAM-Hilfsdateien. Eine
+Die EXE enthält Python, die sechs generischen RAM-Hilfsdateien und ab Beta 6
+unseren eigenen 196-Byte-RAM-Ausschaltcode. Eine
 vollständige Gerätefirmware ist nicht enthalten. **Offline öffnen** lädt die
 mitgelieferte Oberfläche direkt vom Rechner.
 
@@ -40,7 +41,7 @@ Wenn Windows beim Wechsel Zugriff verweigert, die App schließen und über
 Playern bricht die Auswahl ab; bitte nur einen X6 anschließen.
 
 Die Startseite und die App selbst senden beim Öffnen keine Geräteabfrage.
-Erst **Verbinden**, **ADFU betreten** oder **ADFU verlassen** beginnt den Zugriff.
+Erst **Verbinden** oder eine der drei Geräteaktionen in der App beginnt den Zugriff.
 
 ## ADFU direkt in der App betreten
 
@@ -75,6 +76,24 @@ Bei belegtem USB-Zugriff, fehlender Antwort oder unbestätigtem Reset erscheint
 eine Fehlermeldung. Es gibt keinen automatischen Wiederholungsversuch und keine
 Erfolgsmeldung allein aufgrund eines gesendeten Befehls. Ein hängendes Gerät
 kann weiterhin einen physischen Reset benötigen.
+
+## Player über RAM ausschalten
+
+Ab **Beta 6** gibt es **Player ausschalten** direkt im App-Fenster:
+
+1. Laufende Lese- oder Schreibvorgänge abschließen und eine bestehende
+   Browser-Verbindung über **Trennen** freigeben.
+2. **Player ausschalten** anklicken. Die App wechselt bei Bedarf nach ADFU,
+   lädt den enthaltenen Ausschaltcode in den RAM und liest ihn vollständig
+   zum Vergleich zurück. Erst bei Übereinstimmung wird er einmal aufgerufen.
+3. Die Rückmeldung abwarten. USB kann den Player weiterhin versorgen; in
+   diesem Fall anschließend das USB-Kabel abziehen.
+
+Es wird keine Firmware geschrieben. Eine gültige Rückmeldung bestätigt die
+Ausführung der Ausschaltfunktion und ihre Registerwerte, aber keinen vollständigen
+Stromverlust. Bei fehlender USB-Bestätigung bleibt der Vorgang unverifiziert;
+es gibt keinen automatischen Wiederholungsversuch. Die physische Ausschaltwirkung
+ist bisher am X6 nicht geprüft. Während des Vorgangs sind alle drei Gerätebuttons gesperrt.
 
 ## Sichern und Vergleichen
 

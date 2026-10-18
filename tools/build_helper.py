@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import build_poweroff
 import x6_toolkit as toolkit
 import x6_web as web
 
@@ -15,7 +16,7 @@ SELF_TEST_TIMEOUT_S = 30
 
 
 def build() -> None:
-    """Bundle exactly six authorized generic helpers, never a dump or LFI image."""
+    """Bundle six generic helpers and our source-built power-off code, never firmware."""
     output = ROOT / "private_dumps" / "release"
     work = ROOT / "private_dumps" / "build"
     output.mkdir(parents=True, exist_ok=True)
@@ -32,6 +33,8 @@ def build() -> None:
         path = ROOT / name
         command.extend(["--add-data", f"{path}:{path.parent.relative_to(ROOT)}"])
     profile = toolkit.Profile.load()
+    poweroff = build_poweroff.build(work / "poweroff")
+    command.extend(["--add-data", f"{poweroff}:runtime"])
     for name in web.PAYLOAD_NAMES:
         path = toolkit.DEFAULT_RUNTIME / name
         if toolkit.sha256_file(path) != profile.runtime_sha256[name]:
@@ -44,6 +47,7 @@ def build() -> None:
                    check=True, timeout=SELF_TEST_TIMEOUT_S)
     result = json.loads(report.read_text(encoding="utf-8"))
     if (result.get("ok") is not True or result.get("reset_button") is not True or result.get("enter_button") is not True
+            or result.get("poweroff_button") is not True or result.get("poweroff_payload_size") != profile.protocol["poweroff"]["size"]
             or result.get("http_pairing") != {"preflight_status": 204, "pair_status": 200}):
         raise toolkit.ToolkitError(f"Die erzeugte EXE hat ihren HTTP-/Fenster-Selbsttest nicht bestanden: {result}")
 

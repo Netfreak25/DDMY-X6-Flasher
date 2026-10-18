@@ -53,6 +53,7 @@ class WebBridgeTests(unittest.TestCase):
         self.assertEqual(self.request("/api/payloads/adfus.bin"),
                          (200, (self.runtime / "adfus.bin").read_bytes()))
         self.assertEqual(self.request("/api/payloads/../original/lfi.bin")[0], 409)
+        self.assertEqual(self.request("/api/payloads/x6_poweroff.bin")[0], 409)
 
     def test_cross_origin_and_wrong_token_cannot_switch(self):
         for headers in ({"Origin": "https://example.com"}, {"X-X6-Session": "wrong"},

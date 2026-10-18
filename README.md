@@ -19,6 +19,7 @@ Firmware sichern, vergleichen und zurückspielen – direkt im Browser.
 | Mit Gerät vergleichen | Die ausgewählte `.bin` mit dem gesamten Firmwarebereich vergleichen und abweichende Bytes zählen. |
 | ADFU betreten | Den Player direkt im Windows-Helper nach ADFU umschalten, ohne Website. |
 | ADFU verlassen | Den Player direkt im Windows-Helper neu starten, ohne Website oder Browser-Verbindung. |
+| Player ausschalten | Den eigenen Ausschaltcode in den RAM laden, zurücklesen und ausführen. Kein Firmware-Flash. |
 
 „Full“ umfasst **Bootdatensätze und Firmware**, ungefähr 62 MB. Musikdateien,
 der übrige NAND-Inhalt und die SD-Karte gehören nicht zur Sicherung.
@@ -57,6 +58,12 @@ Ab **Beta 5** steht daneben **ADFU betreten**. Beide Richtungen verwenden die
 vorhandenen Toolkit-Abläufe und bestätigen den Zielmodus erst nach Erkennung.
 Während eines Wechsels sind beide Buttons gesperrt. Unvollständige Sicherungen
 zeigen jetzt direkt, welche Bereiche gültig sind und welche Prüfung scheiterte.
+
+Ab **Beta 6** ergänzt **Player ausschalten** die vorhandene Ausschaltfunktion.
+Die App wechselt bei Bedarf nach ADFU, prüft den 196-Byte-Code und dessen
+vollständigen RAM-Rücklesevergleich und führt ihn einmal aus. USB kann den
+Player weiterhin mit Strom versorgen. Ein USB-Abbruch allein bestätigt kein
+erfolgreiches Ausschalten; die physische Wirkung ist noch unverifiziert.
 
 Voraussetzungen: Windows 10/11 (64 Bit), Chrome oder Edge und WinUSB für das
 ADFU-Gerät `10D6:10D6`. Der normale USB-Massenspeichertreiber bleibt bestehen.
@@ -115,6 +122,8 @@ des Eigentümers veröffentlicht; die abgebildete Firmware ist nicht enthalten.*
 - **Windows-Helper-ZIP:** portable App, Offline-Oberfläche und genau sechs
   generische Hilfsdateien: `adfus.bin`, `fwsc.bin`, `nandhwsc.bin`,
   `nandinfo.bin`, `nandread.bin`, `vram_last.bin`.
+  Dazu kommt der eigene, aus dem mitgelieferten C-Quelltext gebaute RAM-
+  Ausschaltcode `x6_poweroff.bin` (196 Byte).
 - **Source-ZIP:** der veröffentlichte Programmcode, Tests, Icons und Anleitung.
 - **Nicht enthalten:** vollständige oder modifizierte Gerätefirmware, Dumps,
   persönliche Sicherungen, gerätespezifische Serienkennungen oder
@@ -122,7 +131,7 @@ des Eigentümers veröffentlicht; die abgebildete Firmware ist nicht enthalten.*
 
 **Beta / unverifizierter Build-Kandidat:** Protokoll, Dateiabläufe und Oberfläche
 sind automatisiert mit simuliertem USB und künstlichen Testdaten geprüft. Der
-neue Browserweg und der native Reset-Button sind noch nicht am X6 auf Hardware bestätigt. Die bisherige
+neue Browserweg, der native Reset-Button und die Ausschaltfunktion sind noch nicht am X6 auf Hardware bestätigt. Die bisherige
 native Flash-Routine wurde als Grundlage übernommen.
 
 Full Restore bleibt eine ausdrücklich zu bestätigende **Notfall-Wiederherstellung**:
@@ -142,15 +151,25 @@ ruff check tools tests
 
 Die Tests benötigen keine Dateien eines echten Players und greifen nicht auf
 Hardware zu. Für einen lokalen EXE-Build werden Python 3.11, PyInstaller 6.22.3
-und die sechs freigegebenen Hilfsdateien im lokalen Runtime-Verzeichnis benötigt:
+und die sechs freigegebenen Hilfsdateien im lokalen Runtime-Verzeichnis benötigt.
+Für den Ausschaltcode wird zusätzlich ARM GCC 13.3.0 einschließlich `objcopy`
+benötigt: `arm-none-eabi-gcc` muss in `PATH` stehen oder `X6_ARM_GCC` auf die
+Compilerdatei zeigen. Der Build prüft den erzeugten Code gegen den festen Hash
+im X6-Profil und verwendet keine Dateien aus einer Gerätefirmware.
 
 ```text
 python tools/build_helper.py
 ```
 
 Der Build startet anschließend die erzeugte EXE in einem hardwarefreien
-Selbsttest. Dieser prüft die mitgelieferten Hilfsdateien, Fenstericons, beide ADFU-Buttons und
+Selbsttest. Dieser prüft die mitgelieferten Hilfsdateien, Fenstericons, alle drei Gerätebuttons und
 die tatsächlichen HTTP-Antworten für CORS-Vorabfrage und Sitzungskopplung.
+
+Der ARM-Test verwendet Unicorn und `X6_POWEROFF_PAYLOAD` mit dem Pfad zum
+gebauten `x6_poweroff.bin`. Er prüft die tatsächlichen Maschinenbefehle und
+ihre Registerzugriffe. `python tools/build_poweroff.py` erzeugt die Datei für
+den Start aus Python im privaten Runtime-Verzeichnis. Der EXE-Build baut und
+integriert sie automatisch; Endnutzer benötigen keinen Compiler.
 
 Die Build-Ausgabe bleibt unter dem ignorierten Verzeichnis `private_dumps/`.
 Abhängigkeiten und Hinweise: [THIRD_PARTY.md](THIRD_PARTY.md).
