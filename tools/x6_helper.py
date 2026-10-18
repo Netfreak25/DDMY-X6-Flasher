@@ -116,7 +116,7 @@ class HelperWindow:
                                          font=("Segoe UI", 11, "bold"), bg="white", fg=INK,
                                          activebackground="#e2efea", relief="flat", cursor="hand2", padx=20, pady=10)
         self.poweroff_button.pack(anchor="w", pady=(15, 0))
-        tk.Label(panel, text="RAM-Funktion · USB kann das Gerät weiter versorgen.",
+        tk.Label(panel, text="RAM-Funktion · Nach Startbestätigung USB abziehen.",
                  font=("Segoe UI", 9), fg="#607771", bg=BACKGROUND).pack(anchor="w", pady=(6, 0))
         root.protocol("WM_DELETE_WINDOW", self.close)
 

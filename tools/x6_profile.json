@@ -26,10 +26,8 @@
     "final_sector": "0xff000000",
     "preserve_header_ranges": [[40, 56], [79, 128]],
     "poweroff": {
-      "size": 196,
-      "sha256": "f488e55c1f864240abae53550344bd606e387300619fbe66019c3a3759b78b3f",
-      "report_size": 40,
-      "report_magic": "X6OFFv1!"
+      "size": 220,
+      "sha256": "f230baaf17ac49bd5ef736fdf767792c811d2a494afe5b6f8ee55997c35f6ab9"
     },
     "nandread": {
       "code_address": "0x11e000",

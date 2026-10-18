@@ -9,7 +9,7 @@ schließen. Es gibt keinen Windows-Dienst, Autostart oder Hintergrundbetrieb
 nach dem Schließen.
 
 Die EXE enthält Python, die sechs generischen RAM-Hilfsdateien und ab Beta 6
-unseren eigenen 196-Byte-RAM-Ausschaltcode. Eine
+unseren eigenen RAM-Ausschaltcode (ab Beta 7: 220 Byte mit USB-Warteloop). Eine
 vollständige Gerätefirmware ist nicht enthalten. **Offline öffnen** lädt die
 mitgelieferte Oberfläche direkt vom Rechner.
 
@@ -79,21 +79,25 @@ kann weiterhin einen physischen Reset benötigen.
 
 ## Player über RAM ausschalten
 
-Ab **Beta 6** gibt es **Player ausschalten** direkt im App-Fenster:
+**Player ausschalten** wartet ab **Beta 7** im Player auf das Abziehen von USB:
 
 1. Laufende Lese- oder Schreibvorgänge abschließen und eine bestehende
    Browser-Verbindung über **Trennen** freigeben.
 2. **Player ausschalten** anklicken. Die App wechselt bei Bedarf nach ADFU,
    lädt den enthaltenen Ausschaltcode in den RAM und liest ihn vollständig
    zum Vergleich zurück. Erst bei Übereinstimmung wird er einmal aufgerufen.
-3. Die Rückmeldung abwarten. USB kann den Player weiterhin versorgen; in
-   diesem Fall anschließend das USB-Kabel abziehen.
+3. Sobald **„Start bestätigt. Jetzt USB-Kabel abziehen.“** erscheint, das
+   USB-Kabel abziehen. Die Schleife wartet ohne feste Zeitgrenze auf den Wegfall
+   der USB-Stromversorgung und bedient dabei den Watchdog. Erst danach werden
+   die Ausschaltwerte geschrieben.
 
-Es wird keine Firmware geschrieben. Eine gültige Rückmeldung bestätigt die
-Ausführung der Ausschaltfunktion und ihre Registerwerte, aber keinen vollständigen
-Stromverlust. Bei fehlender USB-Bestätigung bleibt der Vorgang unverifiziert;
-es gibt keinen automatischen Wiederholungsversuch. Die physische Ausschaltwirkung
-ist bisher am X6 nicht geprüft. Während des Vorgangs sind alle drei Gerätebuttons gesperrt.
+Es wird keine Firmware geschrieben. Bestätigt wird nur der Startauftrag;
+danach sendet der Helper keine weiteren USB-Befehle und wartet auf keinen
+Registerbericht. Solange der Loop wartet, kann der Player keine USB-Aufträge
+bearbeiten. Deshalb vor einer weiteren Geräteaktion zuerst das Kabel abziehen.
+Bei fehlender Startbestätigung gibt es keinen automatischen Wiederholungsversuch.
+Die physische Ausschaltwirkung dieses Build-Kandidaten ist auf Hardware
+unverifiziert. Während Upload und Start sind alle drei Gerätebuttons gesperrt.
 
 ## Sichern und Vergleichen
 

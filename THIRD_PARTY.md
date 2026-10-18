@@ -27,6 +27,8 @@ und dessen Konfiguration; es wird keine vollständige Firmware verteilt.
 Ab Beta 6 enthält die App zusätzlich unseren eigenen RAM-Ausschaltcode aus
 `tools/x6_poweroff.c`. Dieser wird mit ARM GCC gebaut, per SHA-256 geprüft und
 greift nicht auf NAND oder SD zu. Quelltext und Linkerskript sind enthalten.
+Ab Beta 7 wartet er vor den Ausschaltwerten auf das Entfernen der USB-Stromversorgung
+und bedient dabei den Watchdog.
 Unicorn wird ausschließlich für den ARM-Emulatortest verwendet und nicht mitgeliefert.
 
 ## Windows-Paket

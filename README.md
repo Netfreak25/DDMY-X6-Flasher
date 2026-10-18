@@ -19,7 +19,7 @@ Firmware sichern, vergleichen und zurückspielen – direkt im Browser.
 | Mit Gerät vergleichen | Die ausgewählte `.bin` mit dem gesamten Firmwarebereich vergleichen und abweichende Bytes zählen. |
 | ADFU betreten | Den Player direkt im Windows-Helper nach ADFU umschalten, ohne Website. |
 | ADFU verlassen | Den Player direkt im Windows-Helper neu starten, ohne Website oder Browser-Verbindung. |
-| Player ausschalten | Den eigenen Ausschaltcode in den RAM laden, zurücklesen und ausführen. Kein Firmware-Flash. |
+| Player ausschalten | Den eigenen Ausschaltcode in den RAM laden und prüfen. Er wartet auf das Abziehen von USB und fordert dann das Ausschalten an. Kein Firmware-Flash. |
 
 „Full“ umfasst **Bootdatensätze und Firmware**, ungefähr 62 MB. Musikdateien,
 der übrige NAND-Inhalt und die SD-Karte gehören nicht zur Sicherung.
@@ -59,11 +59,14 @@ vorhandenen Toolkit-Abläufe und bestätigen den Zielmodus erst nach Erkennung.
 Während eines Wechsels sind beide Buttons gesperrt. Unvollständige Sicherungen
 zeigen jetzt direkt, welche Bereiche gültig sind und welche Prüfung scheiterte.
 
-Ab **Beta 6** ergänzt **Player ausschalten** die vorhandene Ausschaltfunktion.
-Die App wechselt bei Bedarf nach ADFU, prüft den 196-Byte-Code und dessen
-vollständigen RAM-Rücklesevergleich und führt ihn einmal aus. USB kann den
-Player weiterhin mit Strom versorgen. Ein USB-Abbruch allein bestätigt kein
-erfolgreiches Ausschalten; die physische Wirkung ist noch unverifiziert.
+Ab **Beta 7** wartet **Player ausschalten** direkt im RAM auf das Abziehen
+des USB-Kabels. Die App wechselt bei Bedarf nach ADFU, prüft den 220-Byte-Code
+und dessen vollständigen RAM-Rücklesevergleich und lässt den Start bestätigen.
+Sobald **„Start bestätigt. Jetzt USB-Kabel abziehen.“** erscheint, das Kabel
+abziehen. Erst wenn die USB-Stromversorgung wegfällt, schreibt der Code die
+Ausschaltwerte. Während des Loops wird der Watchdog bedient; es gibt keinen
+festen Countdown und keine weiteren USB-Abfragen. Die Startbestätigung belegt
+kein physisches Ausschalten; dieser Build-Kandidat ist auf Hardware unverifiziert.
 
 Voraussetzungen: Windows 10/11 (64 Bit), Chrome oder Edge und WinUSB für das
 ADFU-Gerät `10D6:10D6`. Der normale USB-Massenspeichertreiber bleibt bestehen.
@@ -123,7 +126,7 @@ des Eigentümers veröffentlicht; die abgebildete Firmware ist nicht enthalten.*
   generische Hilfsdateien: `adfus.bin`, `fwsc.bin`, `nandhwsc.bin`,
   `nandinfo.bin`, `nandread.bin`, `vram_last.bin`.
   Dazu kommt der eigene, aus dem mitgelieferten C-Quelltext gebaute RAM-
-  Ausschaltcode `x6_poweroff.bin` (196 Byte).
+  Ausschaltcode `x6_poweroff.bin` (220 Byte).
 - **Source-ZIP:** der veröffentlichte Programmcode, Tests, Icons und Anleitung.
 - **Nicht enthalten:** vollständige oder modifizierte Gerätefirmware, Dumps,
   persönliche Sicherungen, gerätespezifische Serienkennungen oder
@@ -167,7 +170,8 @@ die tatsächlichen HTTP-Antworten für CORS-Vorabfrage und Sitzungskopplung.
 
 Der ARM-Test verwendet Unicorn und `X6_POWEROFF_PAYLOAD` mit dem Pfad zum
 gebauten `x6_poweroff.bin`. Er prüft die tatsächlichen Maschinenbefehle und
-ihre Registerzugriffe. `python tools/build_poweroff.py` erzeugt die Datei für
+ihre Registerzugriffe, das Warten bei anliegendem USB-Strom und die Fortsetzung
+nach simuliertem Abziehen. `python tools/build_poweroff.py` erzeugt die Datei für
 den Start aus Python im privaten Runtime-Verzeichnis. Der EXE-Build baut und
 integriert sie automatisch; Endnutzer benötigen keinen Compiler.
 

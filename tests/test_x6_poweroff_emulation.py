@@ -14,6 +14,8 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 PMU_BASE = 0xC0010000
+WATCHDOG = 0xC003001C
+USB_PRESENT = 1 << 30
 REGISTER_OFFSETS = (0x20, 0x24, 0x28, 0x2C)
 
 
@@ -33,9 +35,11 @@ class PowerOffTests(unittest.TestCase):
                                      unicorn.UC_MODE_THUMB | unicorn.UC_MODE_MCLASS)
                     cpu.mem_map(address, 0x2000)
                     cpu.mem_map(PMU_BASE, 0x1000)
+                    cpu.mem_map(WATCHDOG & ~0xFFF, 0x1000)
                     cpu.mem_write(address, payload)
                     for offset in REGISTER_OFFSETS:
-                        cpu.mem_write(PMU_BASE + offset, struct.pack("<I", initial))
+                        value = initial & ~USB_PRESENT if offset == 0x28 else initial
+                        cpu.mem_write(PMU_BASE + offset, struct.pack("<I", value))
                     cpu.reg_write(arm_const.UC_ARM_REG_SP, address + 0x2000)
                     cpu.reg_write(arm_const.UC_ARM_REG_LR, (address + 0x1000) | 1)
                     cpu.reg_write(arm_const.UC_ARM_REG_PRIMASK, mask)
@@ -58,10 +62,51 @@ class PowerOffTests(unittest.TestCase):
                     report, size = struct.unpack("<II", cpu.mem_read(descriptor, 8))
                     self.assertEqual(size, 40)
                     magic, *values = struct.unpack("<8s8I", cpu.mem_read(report, size))
-                    self.assertEqual(magic, b"X6OFFv1!")
-                    self.assertEqual(values[:4], [initial] * 4)
+                    self.assertEqual(magic, b"X6OFFv2!")
+                    self.assertEqual(values[:4], [initial, initial,
+                                                  initial & ~USB_PRESENT, initial])
                     self.assertEqual(values[4:], [initial & ~3, 0x15, 0x01F00E1F,
                                                  (initial & ~0x1C0) | 0xC0])
+
+    def test_waits_for_usb_removal_and_feeds_watchdog(self) -> None:
+        """USB present forbids PMU writes; removal releases the five writes."""
+        profile = json.loads((ROOT / "tools" / "x6_profile.json").read_text())
+        address = int(profile["protocol"]["work_address"], 0)
+        cpu = unicorn.Uc(unicorn.UC_ARCH_ARM,
+                         unicorn.UC_MODE_THUMB | unicorn.UC_MODE_MCLASS)
+        cpu.mem_map(address, 0x2000)
+        cpu.mem_map(PMU_BASE, 0x1000)
+        cpu.mem_map(WATCHDOG & ~0xFFF, 0x1000)
+        cpu.mem_write(address, Path(os.environ["X6_POWEROFF_PAYLOAD"]).read_bytes())
+        cpu.mem_write(PMU_BASE + 0x20, struct.pack("<I", 3))
+        cpu.mem_write(PMU_BASE + 0x28, struct.pack("<I", USB_PRESENT))
+        cpu.mem_write(WATCHDOG, struct.pack("<I", 0x16))
+        cpu.reg_write(arm_const.UC_ARM_REG_SP, address + 0x2000)
+        cpu.reg_write(arm_const.UC_ARM_REG_LR, (address + 0x1000) | 1)
+        writes = []
+        cpu.hook_add(unicorn.UC_HOOK_MEM_WRITE,
+                     lambda uc, access, dest, size, value, data:
+                     data.append((dest, size, value)), user_data=writes,
+                     begin=PMU_BASE, end=WATCHDOG + 3)
+        cpu.emu_start(address | 1, address + 0x1000, count=10_000)
+        self.assertTrue(writes)
+        self.assertTrue(all(write == (WATCHDOG, 4, 0x17) for write in writes))
+        self.assertEqual(cpu.reg_read(arm_const.UC_ARM_REG_PRIMASK), 1)
+        # Continue the same CPU after simulating the cable being unplugged.
+        writes.clear()
+        cpu.mem_write(PMU_BASE + 0x28, struct.pack("<I", 0))
+        cpu.emu_start(cpu.reg_read(arm_const.UC_ARM_REG_PC) | 1,
+                      address + 0x1000, count=3_000_000)
+        pmu_writes = [write for write in writes if write[0] != WATCHDOG]
+        self.assertEqual(pmu_writes, [
+            (PMU_BASE + 0x2C, 4, 0xC0),
+            (PMU_BASE + 0x24, 4, 0x15),
+            (PMU_BASE + 0x28, 4, 0x01F00E1F),
+            (PMU_BASE + 0x20, 4, 1),
+            (PMU_BASE + 0x20, 4, 0),
+        ])
+        self.assertEqual(cpu.reg_read(arm_const.UC_ARM_REG_PC), address + 0x1000)
+        self.assertEqual(cpu.reg_read(arm_const.UC_ARM_REG_PRIMASK), 0)
 
 
 if __name__ == "__main__":

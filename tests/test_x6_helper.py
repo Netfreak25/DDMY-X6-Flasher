@@ -23,7 +23,7 @@ class HelperResetTests(unittest.TestCase):
         self.leave = self.reset.start()
         self.entry = mock.patch.object(helper.toolkit, "enter_adfu", return_value=helper.toolkit.Device("adfu"))
         self.enter = self.entry.start()
-        self.off_patch = mock.patch.object(helper.x6_poweroff, "power_off", return_value="Ausschaltcode ausgeführt. USB ggf. abziehen.")
+        self.off_patch = mock.patch.object(helper.x6_poweroff, "power_off", return_value="Start bestätigt. Jetzt USB-Kabel abziehen.")
         self.off = self.off_patch.start()
         self.window = helper.HelperWindow(self.root, self.server)
 
@@ -126,7 +126,7 @@ class HelperResetTests(unittest.TestCase):
             self.assertFalse(self.server.switch_lock.locked())
             self.assertEqual(self.window.enter_button.cget("state"), "normal")
 
-    def test_poweroff_button_runs_native_function_and_reports_usb_limit(self):
+    def test_poweroff_button_runs_native_function_and_prompts_to_unplug(self):
         with mock.patch.object(helper.subprocess, "Popen") as browser:
             self.window.poweroff_button.invoke()
             self.finish_worker()
@@ -134,7 +134,7 @@ class HelperResetTests(unittest.TestCase):
         self.off.assert_called_once_with(self.server.profile, self.server.runtime)
         self.leave.assert_not_called()
         self.enter.assert_not_called()
-        self.assertIn("USB ggf. abziehen", self.window.status.get())
+        self.assertEqual(self.window.status.get(), "Start bestätigt. Jetzt USB-Kabel abziehen.")
         self.assertEqual(self.window.poweroff_button.cget("state"), "normal")
 
     def test_poweroff_failure_is_not_retried_or_shown_as_power_loss(self):
