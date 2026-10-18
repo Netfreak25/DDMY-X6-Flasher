@@ -43,7 +43,7 @@ def build() -> None:
     subprocess.run([str(output / "DDMY X6 Helper.exe"), "--self-test", str(report)],
                    check=True, timeout=SELF_TEST_TIMEOUT_S)
     result = json.loads(report.read_text(encoding="utf-8"))
-    if (result.get("ok") is not True or result.get("reset_button") is not True
+    if (result.get("ok") is not True or result.get("reset_button") is not True or result.get("enter_button") is not True
             or result.get("http_pairing") != {"preflight_status": 204, "pair_status": 200}):
         raise toolkit.ToolkitError(f"Die erzeugte EXE hat ihren HTTP-/Fenster-Selbsttest nicht bestanden: {result}")
 

@@ -9,6 +9,9 @@ test('synthetic BREC checksum and size, MBREC copy addressing match native algor
   const brec = files['brec0.bin'].slice();
   assert.equal(brecLength(brec.subarray(0, 65536), profile.brec_size), brec.length);
   assert.notEqual(bootLayout(mbrec, 0).row, bootLayout(mbrec, 1).row);
+  const badHeader = brec.slice();
+  view(badHeader).setUint16(0, view(brec).getUint16(0, true) ^ 0xffff, true);
+  assert.throws(() => brecLength(badHeader.subarray(0, 65536), profile.brec_size), /checksum/);
   brec[50] ^= 1;
   assert.throws(() => brecLength(brec, profile.brec_size), /checksum/);
 });

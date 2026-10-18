@@ -272,6 +272,10 @@ test('incomplete dump remains downloadable and full restore requires its explici
   await page.evaluate(() => {window.__badBoot = true;});
   await page.locator('#dump').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Unvollständige Sicherung gespeichert.');
+  const backupMessage = await page.locator('#activity').textContent();
+  assert.match(backupMessage, /Firmware: gültig/);
+  assert.match(backupMessage, /Bootkopie 1: bad brec checksum/);
+  assert.match(backupMessage, /Bootkopie 2: gültig/);
   assert.ok((await page.evaluate(() => window.__saved))[0] > profile.lfi_size);
   await page.locator('#backup-file').setInputFiles('private_dumps/web-tests/synthetic.x6backup.zip');
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Sicherung ist vollständig.');

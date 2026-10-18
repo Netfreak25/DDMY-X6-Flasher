@@ -17,6 +17,7 @@ Firmware sichern, vergleichen und zurückspielen – direkt im Browser.
 | Sicherung wiederherstellen | Vollständige ZIP-Sicherungen oder vorhandene Toolkit-Sicherungsordner prüfen und zurückschreiben. |
 | LFI-Teilaktualisierung | Eine passende LFI-`.bin` prüfen, den bisherigen Inhalt lokal sichern, schreiben und vollständig zurücklesen. |
 | Mit Gerät vergleichen | Die ausgewählte `.bin` mit dem gesamten Firmwarebereich vergleichen und abweichende Bytes zählen. |
+| ADFU betreten | Den Player direkt im Windows-Helper nach ADFU umschalten, ohne Website. |
 | ADFU verlassen | Den Player direkt im Windows-Helper neu starten, ohne Website oder Browser-Verbindung. |
 
 „Full“ umfasst **Bootdatensätze und Firmware**, ungefähr 62 MB. Musikdateien,
@@ -51,6 +52,11 @@ Ab **Beta 4** gibt es **ADFU verlassen** direkt im App-Fenster. Der Button
 startet einen antwortenden ADFU-X6 neu und bestätigt dessen Rückkehr erst nach
 Erkennung im Normalmodus. Eine bestehende USB-Verbindung im Flasher vorher
 über **Trennen** freigeben. Der Button verändert keine Firmware im Flash.
+
+Ab **Beta 5** steht daneben **ADFU betreten**. Beide Richtungen verwenden die
+vorhandenen Toolkit-Abläufe und bestätigen den Zielmodus erst nach Erkennung.
+Während eines Wechsels sind beide Buttons gesperrt. Unvollständige Sicherungen
+zeigen jetzt direkt, welche Bereiche gültig sind und welche Prüfung scheiterte.
 
 Voraussetzungen: Windows 10/11 (64 Bit), Chrome oder Edge und WinUSB für das
 ADFU-Gerät `10D6:10D6`. Der normale USB-Massenspeichertreiber bleibt bestehen.
@@ -143,7 +149,7 @@ python tools/build_helper.py
 ```
 
 Der Build startet anschließend die erzeugte EXE in einem hardwarefreien
-Selbsttest. Dieser prüft die mitgelieferten Hilfsdateien, Fenstericons, den Reset-Button und
+Selbsttest. Dieser prüft die mitgelieferten Hilfsdateien, Fenstericons, beide ADFU-Buttons und
 die tatsächlichen HTTP-Antworten für CORS-Vorabfrage und Sitzungskopplung.
 
 Die Build-Ausgabe bleibt unter dem ignorierten Verzeichnis `private_dumps/`.

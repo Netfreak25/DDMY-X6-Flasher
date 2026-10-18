@@ -60,8 +60,8 @@ class HelperWindow:
     def __init__(self, root: tk.Tk, server: web.WebServer) -> None:
         self.root = root
         self.server = server
-        self.reset_running = False
-        self.reset_results = queue.SimpleQueue()
+        self.switch_running = False
+        self.switch_results = queue.SimpleQueue()
         self.thread = threading.Thread(target=server.serve_forever, daemon=True)
         self.thread.start()
         root.title("DDMY X6 · Flasher")
@@ -86,7 +86,7 @@ class HelperWindow:
                  fg=TEAL, bg=BACKGROUND, wraplength=440, justify="left").pack(anchor="w", pady=(25, 10))
         tk.Label(panel, text="Dieses Fenster während des Flashens geöffnet lassen.\n"
                  "Deine Dateien bleiben auf deinem Rechner.\nGerätezugriff erst mit „Verbinden“ im Flasher\n"
-                 "oder hier mit „ADFU verlassen“.",
+                 "oder mit den ADFU-Tasten in dieser App.",
                  justify="left", font=("Segoe UI", 10), fg=INK, bg=BACKGROUND).pack(anchor="w")
         actions = tk.Frame(panel, bg=BACKGROUND)
         actions.pack(fill="x", pady=(25, 0))
@@ -96,10 +96,16 @@ class HelperWindow:
         tk.Button(actions, text="Offline öffnen", command=lambda: self.open_browser(False),
                   font=("Segoe UI", 10), bg=BACKGROUND, fg=TEAL, relief="flat", cursor="hand2",
                   padx=15, pady=10).pack(side="left", padx=(8, 0))
-        self.reset_button = tk.Button(panel, text="ADFU verlassen", command=self.leave_adfu,
+        modes = tk.Frame(panel, bg=BACKGROUND)
+        modes.pack(fill="x", pady=(15, 0))
+        self.enter_button = tk.Button(modes, text="ADFU betreten", command=self.enter_adfu,
                                       font=("Segoe UI", 11, "bold"), bg="white", fg=TEAL,
                                       activebackground="#e2efea", relief="flat", cursor="hand2", padx=20, pady=10)
-        self.reset_button.pack(anchor="w", pady=(15, 0))
+        self.enter_button.pack(side="left", padx=(0, 10))
+        self.reset_button = tk.Button(modes, text="ADFU verlassen", command=self.leave_adfu,
+                                      font=("Segoe UI", 11, "bold"), bg="white", fg=TEAL,
+                                      activebackground="#e2efea", relief="flat", cursor="hand2", padx=20, pady=10)
+        self.reset_button.pack(side="left")
         root.protocol("WM_DELETE_WINDOW", self.close)
 
     def open_browser(self, online: bool) -> None:
@@ -109,46 +115,64 @@ class HelperWindow:
         except (OSError, toolkit.ToolkitError) as error:
             messagebox.showerror("Browser öffnen", str(error), parent=self.root)
 
+    def enter_adfu(self) -> None:
+        """Use the existing Windows SCSI switch without opening a website."""
+        self._start_switch(entering=True)
+
     def leave_adfu(self) -> None:
-        """Run one native reset on demand; keep Tk responsive and prevent overlaps."""
-        if self.reset_running:
+        """Use the native WinUSB reset without opening a website."""
+        self._start_switch(entering=False)
+
+    def _start_switch(self, entering: bool) -> None:
+        """Serialize both buttons with each other and the web bridge switch."""
+        if self.switch_running:
             return
         if not self.server.switch_lock.acquire(blocking=False):
             messagebox.showinfo("X6 wird verwendet", "Ein ADFU-Wechsel läuft bereits. Bitte dessen Ende abwarten.", parent=self.root)
             return
-        self.reset_running = True
+        self.switch_running = True
+        self.switch_title = "ADFU betreten" if entering else "ADFU verlassen"
+        self.switch_error = "ADFU-Wechsel nicht bestätigt" if entering else "Neustart nicht bestätigt"
+        self.enter_button.configure(state="disabled")
         self.reset_button.configure(state="disabled")
-        self.status.set("X6 wird neu gestartet …")
-        self.reset_worker = threading.Thread(target=self._reset_device, daemon=True)
-        self.reset_worker.start()
-        self.root.after(UI_POLL_MS, self._poll_reset)
+        self.status.set("X6 wechselt nach ADFU …" if entering else "X6 wird neu gestartet …")
+        self.switch_worker = threading.Thread(target=self._switch_device, args=(entering,), daemon=True)
+        self.switch_worker.start()
+        self.root.after(UI_POLL_MS, self._poll_switch)
 
-    def _reset_device(self) -> None:
+    def _switch_device(self, entering: bool) -> None:
         """Only the worker touches USB; all widget updates stay on the Tk thread."""
         try:
-            result = x6_reset.leave_adfu(self.server.profile, self.server.payload("adfus.bin"))
-            self.reset_results.put((True, result))
+            if entering:
+                device = toolkit.enter_adfu(self.server.profile)
+                if device.mode != "adfu":
+                    raise toolkit.ToolkitError("Der X6 wurde nicht im ADFU-Modus erkannt.")
+                result = "X6 im ADFU-Modus erkannt."
+            else:
+                result = x6_reset.leave_adfu(self.server.profile, self.server.payload("adfus.bin"))
+            self.switch_results.put((True, result))
         except Exception as error:  # noqa: BLE001 - deliver worker failures to the GUI, never discard them.
             # Report unexpected worker errors too, so the UI never silently hangs.
-            self.reset_results.put((False, str(error)))
+            self.switch_results.put((False, str(error)))
         finally:
             self.server.switch_lock.release()
 
-    def _poll_reset(self) -> None:
+    def _poll_switch(self) -> None:
         try:
-            success, message = self.reset_results.get_nowait()
+            success, message = self.switch_results.get_nowait()
         except queue.Empty:
-            self.root.after(UI_POLL_MS, self._poll_reset)
+            self.root.after(UI_POLL_MS, self._poll_switch)
             return
-        self.reset_running = False
+        self.switch_running = False
+        self.enter_button.configure(state="normal")
         self.reset_button.configure(state="normal")
-        self.status.set(message if success else "Neustart nicht bestätigt")
+        self.status.set(message if success else self.switch_error)
         if not success:
-            messagebox.showerror("ADFU verlassen", message, parent=self.root)
+            messagebox.showerror(self.switch_title, message, parent=self.root)
 
     def close(self) -> None:
-        if self.reset_running:
-            messagebox.showinfo("Neustart läuft", "Bitte das Ergebnis des laufenden Neustarts abwarten.", parent=self.root)
+        if self.switch_running:
+            messagebox.showinfo("ADFU-Wechsel läuft", "Bitte das Ergebnis des laufenden ADFU-Wechsels abwarten.", parent=self.root)
             return
         self.server.shutdown()
         self.server.server_close()
@@ -189,9 +213,11 @@ def main() -> None:
             hwnd = user32.GetParent(root.winfo_id())
             icons = [bool(user32.SendMessageW(hwnd, 0x7F, size, 0)) for size in (0, 1)]
             reset_button = window.reset_button.cget("text") == "ADFU verlassen" and window.reset_button.cget("state") == "normal"
-            args.self_test.write_text(json.dumps({"ok": all(icons) and reset_button, "helpers": list(web.PAYLOAD_NAMES),
+            enter_button = window.enter_button.cget("text") == "ADFU betreten" and window.enter_button.cget("state") == "normal"
+            args.self_test.write_text(json.dumps({"ok": all(icons) and reset_button and enter_button, "helpers": list(web.PAYLOAD_NAMES),
                                                  "window_icons": icons, "http_pairing": http_checks,
                                                  "reset_button": reset_button,
+                                                 "enter_button": enter_button,
                                                  "device_access": False}), encoding="utf-8")
             window.close()
             return

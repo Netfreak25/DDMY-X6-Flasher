@@ -40,7 +40,22 @@ Wenn Windows beim Wechsel Zugriff verweigert, die App schließen und über
 Playern bricht die Auswahl ab; bitte nur einen X6 anschließen.
 
 Die Startseite und die App selbst senden beim Öffnen keine Geräteabfrage.
-Erst **Verbinden** oder der native Button **ADFU verlassen** beginnt den Zugriff.
+Erst **Verbinden**, **ADFU betreten** oder **ADFU verlassen** beginnt den Zugriff.
+
+## ADFU direkt in der App betreten
+
+Ab **Beta 5** lässt sich auch der Wechsel nach ADFU ohne Website auslösen:
+
+1. Den normal gestarteten X6 per USB anschließen und die Windows-App öffnen.
+2. **ADFU betreten** anklicken und das Ergebnis abwarten.
+
+Die App erkennt den internen Player, verwendet den bestehenden Windows-SCSI-
+Wechsel und wartet auf seine Anmeldung als ADFU-Gerät. Ist er bereits in ADFU,
+wird kein weiterer Umschaltbefehl gesendet. Bei verweigertem Windows-Zugriff
+die App schließen und **Als Administrator ausführen** wählen.
+
+Während eines Wechsels sind beide ADFU-Buttons gesperrt. Das Öffnen der App
+allein schaltet den Player nicht um. Beide Buttons benötigen keine Website.
 
 ## ADFU direkt in der App verlassen
 
@@ -66,6 +81,9 @@ kann weiterhin einen physischen Reset benötigen.
 **Sicherung erstellen** speichert Bootdatensätze und Firmware als
 `.x6backup.zip`. Mediendaten und SD-Karte sind nicht enthalten. Unvollständige
 Sicherungen können gespeichert, aber nicht für Full Restore verwendet werden.
+Die Ergebnismeldung nennt ab Beta 5 Firmware und beide Bootkopien einzeln,
+einschließlich des jeweiligen Lesefehlers oder der fehlgeschlagenen Prüfung.
+Eine ungültige Boot-Prüfsumme kann auch bei vollständig gültigem LFI auftreten.
 Bei einem Speicherfehler bietet **Gelesene Sicherung speichern** die bereits
 gelesenen Daten erneut an. Bis dahin die Browserseite nicht schließen.
 

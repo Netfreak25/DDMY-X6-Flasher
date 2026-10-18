@@ -1,4 +1,4 @@
-"""Native window reset controls with a mocked device and HTTP server."""
+"""Both native ADFU buttons with a mocked device and HTTP server."""
 
 import sys
 import threading
@@ -21,20 +21,24 @@ class HelperResetTests(unittest.TestCase):
         self.probe.start()
         self.reset = mock.patch.object(helper.x6_reset, "leave_adfu", return_value="Normalmodus erkannt")
         self.leave = self.reset.start()
+        self.entry = mock.patch.object(helper.toolkit, "enter_adfu", return_value=helper.toolkit.Device("adfu"))
+        self.enter = self.entry.start()
         self.window = helper.HelperWindow(self.root, self.server)
 
     def tearDown(self):
         self.window.close()
         self.reset.stop()
+        self.entry.stop()
         self.probe.stop()
 
     def finish_worker(self):
-        self.window.reset_worker.join(timeout=2)
-        self.assertFalse(self.window.reset_worker.is_alive())
-        self.window._poll_reset()
+        self.window.switch_worker.join(timeout=2)
+        self.assertFalse(self.window.switch_worker.is_alive())
+        self.window._poll_switch()
 
     def test_passive_start_and_button_runs_without_browser(self):
         self.leave.assert_not_called()
+        self.enter.assert_not_called()
         with mock.patch.object(helper.subprocess, "Popen") as browser:
             self.window.reset_button.invoke()
             self.finish_worker()
@@ -50,6 +54,8 @@ class HelperResetTests(unittest.TestCase):
         try:
             self.window.leave_adfu()
             self.window.leave_adfu()
+            self.window.enter_adfu()
+            self.assertEqual(self.window.enter_button.cget("state"), "disabled")
             self.assertEqual(self.window.reset_button.cget("state"), "disabled")
             with mock.patch.object(helper.messagebox, "showinfo") as message:
                 self.window.close()
@@ -59,14 +65,17 @@ class HelperResetTests(unittest.TestCase):
             gate.set()
             self.finish_worker()
         self.assertEqual(self.leave.call_count, 1)
+        self.enter.assert_not_called()
 
     def test_busy_bridge_does_not_start_reset(self):
         self.server.switch_lock.acquire()
         try:
             with mock.patch.object(helper.messagebox, "showinfo") as message:
                 self.window.reset_button.invoke()
-                message.assert_called_once()
+                self.window.enter_button.invoke()
+                self.assertEqual(message.call_count, 2)
             self.leave.assert_not_called()
+            self.enter.assert_not_called()
         finally:
             self.server.switch_lock.release()
 
@@ -80,6 +89,33 @@ class HelperResetTests(unittest.TestCase):
         self.assertEqual(self.window.status.get(), "Neustart nicht bestätigt")
         self.assertFalse(self.server.switch_lock.locked())
         self.assertEqual(self.window.reset_button.cget("state"), "normal")
+
+    def test_enter_uses_existing_toolkit_without_browser_or_ram_payload(self):
+        with mock.patch.object(helper.subprocess, "Popen") as browser:
+            self.window.enter_button.invoke()
+            self.finish_worker()
+            browser.assert_not_called()
+        self.enter.assert_called_once_with(self.server.profile)
+        self.server.payload.assert_not_called()
+        self.leave.assert_not_called()
+        self.assertEqual(self.window.status.get(), "X6 im ADFU-Modus erkannt.")
+        self.assertEqual(self.window.enter_button.cget("state"), "normal")
+        self.assertFalse(self.server.switch_lock.locked())
+
+    def test_enter_failure_or_wrong_mode_never_reports_success_or_retries(self):
+        for result in (helper.toolkit.ToolkitError("timeout"), helper.toolkit.Device("normal")):
+            self.enter.reset_mock()
+            self.enter.side_effect = result if isinstance(result, Exception) else None
+            self.enter.return_value = result
+            with mock.patch.object(helper.messagebox, "showerror") as message:
+                self.window.enter_button.invoke()
+                self.finish_worker()
+                message.assert_called_once()
+                self.assertEqual(message.call_args.args[0], "ADFU betreten")
+            self.enter.assert_called_once()
+            self.assertEqual(self.window.status.get(), "ADFU-Wechsel nicht bestätigt")
+            self.assertFalse(self.server.switch_lock.locked())
+            self.assertEqual(self.window.enter_button.cget("state"), "normal")
 
 
 if __name__ == "__main__":

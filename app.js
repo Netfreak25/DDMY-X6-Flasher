@@ -1,6 +1,6 @@
 import { ActionsUSB, usbId, delay } from './lib/transport.js';
 import { X6Driver } from './lib/driver.js';
-import { X6Operations } from './lib/workflows.js';
+import { X6Operations, incompleteDumpMessage } from './lib/workflows.js';
 import { validateLfi, validateBundle, sha256, assertSame } from './lib/formats.js';
 import { packBackup, unpackBackup, importFolder } from './lib/archive.js';
 import { sessionFromLocation, bridgeRequest, pairHelper, saveSession } from './lib/bridge.js';
@@ -290,7 +290,7 @@ $('dump').addEventListener('click', () => void run('Sicherung erstellen', async 
     const boot = await operation.reboot();
     result('Vollständige Sicherung gespeichert.', `Bootdatensätze und Firmware wurden gesichert.${boot.normalMode ? ' Der Player ist normal gestartet.' : ' Der Neustart ist noch nicht bestätigt.'}`, boot.normalMode ? 'success' : 'warning');
   } else {
-    result('Unvollständige Sicherung gespeichert.', 'Mindestens ein Bereich konnte nicht gültig gelesen werden. Die verfügbaren Daten wurden gespeichert; dieses Archiv ist nicht für Full Restore freigegeben.', 'warning');
+    result('Unvollständige Sicherung gespeichert.', incompleteDumpMessage(backup.manifest), 'warning');
   }
 }));
 

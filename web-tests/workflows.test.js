@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { X6Operations } from '../lib/workflows.js';
+import { X6Operations, incompleteDumpMessage } from '../lib/workflows.js';
 import { validateBundle } from '../lib/formats.js';
 import { packBackup, unpackBackup, importFolder } from '../lib/archive.js';
 
@@ -43,10 +43,20 @@ test('incomplete boot read retains the good second copy and produces an incomple
   assert.equal(result.manifest.status, 'incomplete');
   assert.ok(result.files['brec1.bin']);
   assert.equal(result.files['brec0.bin'], undefined);
+  const message = incompleteDumpMessage(result.manifest);
+  assert.match(message, /Firmware: gültig/);
+  assert.match(message, /Bootkopie 1: bad brec checksum/);
+  assert.match(message, /Bootkopie 2: gültig/);
+  assert.match(message, /nicht für Full Restore/);
   assert.ok(!calls.includes('reset'));
   const restored = unpackBackup(packBackup(result.files, result.manifest), profile);
   await assert.rejects(validateBundle(restored, profile), /unvollständig/);
   assert.deepEqual(restored['brec1.bin'], files['brec1.bin']);
+});
+
+test('backup-wide validation errors and missing steps remain visible in the result', () => {
+  assert.match(incompleteDumpMessage({steps: {}, error: 'BREC-Kopien unterscheiden sich'}), /BREC-Kopien unterscheiden sich/);
+  assert.match(incompleteDumpMessage({}), /Firmware: nicht vollständig gelesen/);
 });
 
 test('normal restore gate and uncertain MBREC write stop before BREC/LFI', async () => {
