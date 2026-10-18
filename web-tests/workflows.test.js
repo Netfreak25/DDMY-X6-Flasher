@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { X6Operations, incompleteDumpMessage } from '../lib/workflows.js';
-import { validateBundle } from '../lib/formats.js';
-import { packBackup, unpackBackup, importFolder } from '../lib/archive.js';
+import { validateBundle, sha256 } from '../lib/formats.js';
+import { packBackup, unpackBackup, importFolder, encodeManifest } from '../lib/archive.js';
 
-import { profile, files } from './fixtures.js';
+import { profile, files, payload } from './fixtures.js';
 
 function fixture() {
   const calls = [];
-  const driver = {flashDriver: async () => calls.push('driver'),
+  const driver = {payload, flashDriver: async () => calls.push('driver'),
     readLfi: async () => {calls.push('read'); return files['lfi.bin'];},
     writeArea: async name => calls.push(name), finalize: async () => calls.push('final'),
     readBoot: async index => {calls.push(`boot${index}`); return index === 0 ?
@@ -67,6 +67,17 @@ test('normal restore gate and uncertain MBREC write stop before BREC/LFI', async
   driver.writeArea = async name => {calls.push(name); throw new Error('unconfirmed');};
   await assert.rejects(operations.restore(files, true), /unconfirmed/);
   assert.deepEqual(calls, ['driver', 'mbrec']);
+});
+
+test('invalid finalized BREC stops full restore before MBREC even with matching archive hashes', async () => {
+  const {operations, calls} = fixture(), corrupt = {...files}, manifest = JSON.parse(new TextDecoder().decode(files['manifest.json']));
+  for (const name of ['brec0.bin', 'brec1.bin']) {
+    corrupt[name] = files[name].slice(); corrupt[name][0x200] ^= 1;
+    manifest.files[name].sha256 = await sha256(corrupt[name]);
+  }
+  corrupt['manifest.json'] = encodeManifest(manifest);
+  await assert.rejects(operations.restore(corrupt), /Prüfsumme/);
+  assert.deepEqual(calls, []);
 });
 
 test('interrupted firmware dump saves the confirmed prefix as incomplete without invented bytes', async () => {

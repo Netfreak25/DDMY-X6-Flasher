@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -40,10 +41,13 @@ def build() -> None:
     command.append(str(ROOT / "tools/x6_helper.py"))
     subprocess.run(command, cwd=ROOT, check=True)
     report = output / "self-test.json"
+    # Keep the package check independent of existing app data and MSIX path
+    # virtualization in the build host. Never load a user's device binding here.
+    test_environment = {**os.environ, "LOCALAPPDATA": str(work / "self-test-localappdata")}
     subprocess.run([str(output / "DDMY X6 Flasher.exe"), "--self-test", str(report)],
-                   check=True, timeout=SELF_TEST_TIMEOUT_S)
+                   check=True, timeout=SELF_TEST_TIMEOUT_S, env=test_environment)
     result = json.loads(report.read_text(encoding="utf-8"))
-    required = {"Verbinden", "Sicherung erstellen", "Sicherung wiederherstellen", "Firmware flashen · LFI",
+    required = {"Verbinden", "Sicherung erstellen", "Sicherung wiederherstellen", "Auswahl flashen",
                 "Mit Gerät vergleichen", "ADFU betreten", "ADFU verlassen", "Player ausschalten"}
     if (result.get("ok") is not True or not required <= set(result.get("controls", []))
             or result.get("backend_hashes_checked") is not True or result.get("workspace_outside_resources") is not True

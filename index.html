@@ -26,14 +26,14 @@
     </section>
 
     <section class="file-panel" aria-labelledby="file-heading">
-      <div class="file-icon" aria-hidden="true">↓</div><div class="file-info"><h2 id="file-heading">Firmware auswählen</h2><p id="firmware-info">Eine X6-Firmware im .bin-Format laden, um sie zu flashen oder zu vergleichen.</p></div>
-      <label class="file-button">Datei auswählen<input id="firmware-file" type="file" accept=".bin" data-control></label>
+      <div class="file-icon" aria-hidden="true">↓</div><div class="file-info"><h2 id="file-heading">Firmware auswählen</h2><p id="firmware-info">MBREC, BREC oder LFI · eine oder mehrere BIN-Dateien, oder ein vollständiges ZIP-Paket.</p></div>
+      <label class="file-button">Dateien auswählen<input id="firmware-file" type="file" accept=".bin,.zip" multiple data-control></label>
     </section>
 
     <section class="actions-grid" aria-label="Aktionen">
       <article class="action-card"><span class="card-icon" aria-hidden="true">↧</span><h2>Sicherung erstellen</h2><p>Bootdatensätze und Firmware gemeinsam sichern. Musik und SD-Karte bleiben unberührt.</p><button id="dump" class="secondary" data-control disabled>Sicherung erstellen <span aria-hidden="true">→</span></button><small>Full-Dump · ungefähr 62 MB</small></article>
       <article class="action-card"><span class="card-icon" aria-hidden="true">↶</span><h2>Sicherung wiederherstellen</h2><p>Eine vollständige Sicherung laden und Bootdatensätze samt Firmware zurückspielen.</p><div class="backup-picker"><label class="text-button">ZIP auswählen<input id="backup-file" type="file" accept=".zip" data-control></label><span>oder</span><label class="text-button">Ordner öffnen<input id="backup-folder" type="file" webkitdirectory multiple data-control></label></div><button id="restore" class="secondary" data-control disabled>Wiederherstellen <span aria-hidden="true">→</span></button><small id="backup-info">Noch keine Sicherung ausgewählt</small></article>
-      <article class="action-card"><span class="card-icon" aria-hidden="true">↑</span><h2>Firmware flashen · LFI</h2><p>Eine Teilaktualisierung der Hauptfirmware installieren. Das aktuelle Image wird vorher gesichert und das neue vollständig zurückgelesen.</p><button id="flash" class="primary" data-control disabled>Firmware flashen <span aria-hidden="true">→</span></button><small>Komplette Firmware mit BREC: vollständiges Paket wiederherstellen.</small></article>
+      <article class="action-card"><span class="card-icon" aria-hidden="true">↑</span><h2>Firmware flashen</h2><p>Erkannte Bereiche einzeln oder zusammen aktualisieren. Vorher sichern, anschließend vollständig zurücklesen und prüfen.</p><button id="flash" class="primary" data-control disabled>Auswahl flashen <span aria-hidden="true">→</span></button><small>Automatische Erkennung · MBREC, BREC und LFI</small></article>
       <article class="action-card"><span class="card-icon" aria-hidden="true">⇄</span><h2>Mit Gerät vergleichen</h2><p>Die ausgewählte Firmware Byte für Byte mit dem Inhalt deines Players vergleichen.</p><button id="verify" class="secondary" data-control disabled>Vergleichen <span aria-hidden="true">→</span></button><small>Kein Schreiben in den Flash</small></article>
     </section>
 

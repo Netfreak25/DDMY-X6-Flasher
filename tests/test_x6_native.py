@@ -16,6 +16,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import x6_archive as archive
+import x6_images as images
 import x6_lfi
 import x6_native as native
 import x6_toolkit as toolkit
@@ -59,6 +60,8 @@ class NativeTests(unittest.TestCase):
         self.source.mkdir()
         mbrec = bytearray(1024)
         mbrec[2] = 0x5A
+        mbrec[3:5] = bytes((2, 3))
+        struct.pack_into("<2H", mbrec, 0x0C, 256, 8192)
         self.files = {"lfi.bin": self.image, "brec0.bin": brec, "brec1.bin": brec,
                       "mbrec.bin": bytes(mbrec), "mbrec_copy.bin": bytes(mbrec)}
         for name, data in self.files.items():
@@ -106,6 +109,14 @@ class NativeTests(unittest.TestCase):
             data = Path(args[-1]).read_bytes()
             if name == "write_lfi":
                 self.device_image = data
+            elif name == "write_mbrec":
+                self.files["mbrec.bin"] = self.files["mbrec_copy.bin"] = data
+            elif name == "write_brec":
+                # Model the driver's actual header addition, then both NAND copies.
+                data = bytearray(data)
+                checksum, header_sum = struct.unpack_from("<2H", data)
+                struct.pack_into("<H", data, 0, (checksum + 2 * header_sum) & 0xFFFF)
+                self.files["brec0.bin"] = self.files["brec1.bin"] = bytes(data)
             sectors = len(data) // 512
             return f"write_flash: {sectors}/{sectors} sectors\n"
         return ""
@@ -118,6 +129,118 @@ class NativeTests(unittest.TestCase):
         result = toolkit.validate_lfi(self.source / "lfi.bin", self.profile)
         self.assertEqual(result["files"], 148)
         self.assertEqual(result["sha256"], hashlib.sha256(self.image).hexdigest())
+
+    def changed_candidates(self):
+        paths = {}
+        for area, offset in (("mbrec", 0x100), ("brec", 0x11000), ("lfi", len(self.image) - 1)):
+            data = bytearray(self.files[images.AREA_FILES[area][0]])
+            data[offset] ^= 1
+            path = self.base / f"arbitrary-{len(paths)}.bin"
+            path.write_bytes(data)
+            paths[area] = path
+        return paths
+
+    def test_all_seven_component_combinations_write_only_selected_areas_and_verify_both_boot_copies(self):
+        paths = self.changed_candidates()
+        original = self.files.copy()
+        for mask in range(1, 8):
+            with self.subTest(mask=mask):
+                self.files, self.device_image, self.calls = original.copy(), self.image, []
+                areas = [area for index, area in enumerate(images.AREA_FILES) if mask & (1 << index)]
+                self.ops.inspect(tuple(paths[area] for area in reversed(areas)))
+                self.assertEqual(self.calls, [])
+                selected = self.ops.selection
+                self.assertEqual(selected.areas, tuple(areas))
+                saved = self.base / f"backup-{mask}.{'zip' if selected.has_boot else 'bin'}"
+                with self.simulated():
+                    result = self.ops.flash_selection(selected, saved)
+                self.assertTrue(result["normal_mode"])
+                self.assertEqual([call for call in self.calls if call.startswith("write_")], [f"write_{area}" for area in areas])
+                self.assertEqual(self.calls.count("finalize"), 1)
+                self.assertEqual(self.calls[-1], "reset")
+                if selected.has_boot:
+                    first_write = self.calls.index(f"write_{areas[0]}")
+                    self.assertEqual(self.calls[first_write - 1], "fwsc_start")
+                    self.assertEqual(self.calls.count("read_brec0"), 2)
+                    self.assertEqual(self.calls.count("read_brec1"), 2)
+                    with zipfile.ZipFile(saved) as zipped:
+                        for name in toolkit.BUNDLE_FILES:
+                            self.assertEqual(zipped.read(name), original[name])
+                for area in ("mbrec", "brec"):
+                    for name in images.AREA_FILES[area]:
+                        self.assertEqual(self.files[name], paths[area].read_bytes() if area in areas else original[name])
+                self.assertEqual(self.device_image, paths["lfi"].read_bytes() if "lfi" in areas else self.image)
+
+    def test_selection_accepts_duplicate_copies_and_bundle_but_rejects_conflicts_and_changed_input(self):
+        self.ops.inspect(tuple(self.source / name for name in toolkit.BUNDLE_FILES))
+        self.assertEqual(self.ops.selection.areas, ("mbrec", "brec", "lfi"))
+        zipped = self.base / "package.zip"
+        archive.export_backup(self.source, zipped)
+        self.ops.inspect((zipped,))
+        self.assertEqual(self.ops.selection.areas, ("mbrec", "brec", "lfi"))
+        paths = self.changed_candidates()
+        with self.assertRaisesRegex(toolkit.ToolkitError, "Widersprüchliche BREC"):
+            self.ops.inspect((self.source / "brec0.bin", paths["brec"]))
+        self.assertIsNone(self.ops.selection)
+        self.ops.inspect((paths["lfi"],))
+        self.ops.selection.files["lfi"].write_bytes(self.image)
+        with self.simulated(), self.assertRaisesRegex(toolkit.ToolkitError, "erneut auswählen"):
+            self.ops.flash_selection(self.ops.selection, self.base / "saved.bin")
+        self.assertEqual(self.calls, [])
+
+    def test_corrupt_components_and_mbrec_geometry_are_rejected_offline(self):
+        paths = self.changed_candidates()
+        for area, offset in (("mbrec", 0x0E), ("brec", 0x200), ("lfi", 0x2000)):
+            data = bytearray(paths[area].read_bytes())
+            data[offset] ^= 1
+            paths[area].write_bytes(data)
+            with self.subTest(area=area), self.assertRaises((toolkit.ToolkitError, ValueError)):
+                self.ops.inspect((paths[area],))
+        self.assertEqual(self.calls, [])
+
+    def test_component_writes_stop_without_retry_on_each_uncertain_ack(self):
+        paths = self.changed_candidates()
+        original = self.files.copy()
+        for failed in ("mbrec", "brec", "lfi"):
+            self.files, self.device_image, self.calls = original.copy(), self.image, []
+            self.ops.inspect(tuple(paths.values()))
+
+            def run(backend, name, *args, failed=failed, **kwargs):
+                result = self.backend(backend, name, *args, **kwargs)
+                return "" if name == f"write_{failed}" else result
+
+            with self.simulated(run), self.assertRaisesRegex(toolkit.ToolkitError, "not confirmed"):
+                self.ops.flash_selection(self.ops.selection, self.base / f"before-{failed}.zip")
+            self.assertEqual(self.calls[-1], f"write_{failed}")
+            self.assertEqual(self.calls.count(f"write_{failed}"), 1)
+
+    def test_partial_boot_readback_checks_unselected_boot_and_second_brec_copy(self):
+        paths = self.changed_candidates()
+        for corrupt in ("mbrec_copy.bin", "brec1.bin"):
+            self.files[corrupt] = (self.source / corrupt).read_bytes()
+            self.ops.inspect((paths["brec"],))
+
+            def run(backend, name, *args, corrupt=corrupt, **kwargs):
+                result = self.backend(backend, name, *args, **kwargs)
+                if name == "finalize":
+                    damaged = bytearray(self.files[corrupt])
+                    damaged[0x100] ^= 1
+                    self.files[corrupt] = bytes(damaged)
+                return result
+
+            with self.simulated(run), self.assertRaises(toolkit.ToolkitError):
+                self.ops.flash_selection(self.ops.selection, self.base / f"before-{corrupt}.zip")
+            self.assertNotEqual(self.calls[-1], "reset")
+            self.files = {name: (self.source / name).read_bytes() for name in toolkit.BUNDLE_FILES}
+
+    def test_component_comparison_counts_both_copies_without_flash_commands(self):
+        paths = self.changed_candidates()
+        self.ops.inspect(tuple(paths.values()))
+        with self.simulated():
+            compared = self.ops.compare_selection(self.ops.selection)
+        self.assertFalse(compared["identical"])
+        self.assertEqual(compared["different"], 5)
+        self.assertFalse(any(call.startswith("write_") for call in self.calls))
 
     def test_flash_saves_checked_backup_before_writes_and_full_readback(self):
         saved = self.base / "saved.bin"

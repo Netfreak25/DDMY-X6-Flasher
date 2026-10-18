@@ -30,17 +30,8 @@ def word_sum(data: bytes) -> int:
     return sum(value[0] for value in struct.iter_unpack("<H", data)) & WORD_MASK
 
 
-def prepare_transfer(original: bytes, driver: bytes, profile: Profile) -> bytes:
-    """Undo the driver's checksum addition in a separate transfer copy.
-
-This requires an already finalized, valid X6 boot header. The hardware must
-retain its header geometry; compare both complete NAND copies after writing.
-"""
-    if hashlib.sha256(driver).hexdigest() != profile.runtime_sha256["fwsc.bin"]:
-        raise ValueError("FWSC hash differs from the pinned X6 driver")
-    base = int(profile.protocol["work_address"], 0)
-    if driver[DRIVER_HEADER_START - base:DRIVER_HEADER_END - base] != DRIVER_HEADER_CODE:
-        raise ValueError("FWSC BREC checksum routine differs from the audited code")
+def validate_brec(original: bytes, profile: Profile) -> None:
+    """Reject damaged or already adjusted transfer files before selecting BREC."""
     if len(original) != profile.brec_size or original[0x80:0x85] != profile.nand_id:
         raise ValueError("not a complete BREC for the X6 NAND")
     checksum, header_sum, code_sectors, total_sectors = struct.unpack_from("<4H", original)
@@ -52,6 +43,20 @@ retain its header geometry; compare both complete NAND copies after writing.
         raise ValueError("invalid BREC code checksum; input may already be prepared")
     if header_sum != word_sum(original[4:HEADER_SIZE]):
         raise ValueError("invalid finalized BREC header checksum")
+
+
+def prepare_transfer(original: bytes, driver: bytes, profile: Profile) -> bytes:
+    """Undo the driver's checksum addition in a separate transfer copy.
+
+    This requires a finalized X6 boot header. Keep the original for readback.
+    """
+    if hashlib.sha256(driver).hexdigest() != profile.runtime_sha256["fwsc.bin"]:
+        raise ValueError("FWSC hash differs from the pinned X6 driver")
+    base = int(profile.protocol["work_address"], 0)
+    if driver[DRIVER_HEADER_START - base:DRIVER_HEADER_END - base] != DRIVER_HEADER_CODE:
+        raise ValueError("FWSC BREC checksum routine differs from the audited code")
+    validate_brec(original, profile)
+    checksum, header_sum = struct.unpack_from("<2H", original)
     result = bytearray(original)
     struct.pack_into("<H", result, 0, (checksum - 2 * header_sum) & WORD_MASK)
     return bytes(result)

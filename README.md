@@ -6,7 +6,7 @@ Eine portable **Windows-App** zum Sichern, Vergleichen und Flashen des
 **DDMY X6 mit Actions ATJ2157**. Dieselben Hauptfunktionen stehen auch auf
 unserer WebUSB-Seite bereit.
 
-**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/tag/v0.2.0-beta.1)** ·
+**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/tag/v0.2.0-beta.2)** ·
 **[Online-Flasher öffnen](https://netfreak25.github.io/DDMY-X6-Flasher/)** ·
 **[Bedienung](docs/BEDIENUNG.md)**
 
@@ -16,15 +16,18 @@ unserer WebUSB-Seite bereit.
 | --- | --- |
 | Sicherung erstellen | MBREC, MBREC-Kopie, BREC 0, BREC 1 und vollständiges LFI als kompatibles `.x6backup.zip` speichern. |
 | Sicherung wiederherstellen | ZIP oder Toolkit-Ordner prüfen, MBREC → BREC → LFI schreiben, abschließen und alle fünf Dateien zurücklesen. |
-| Firmware flashen · LFI | `.bin` prüfen, bisheriges LFI zuerst speichern und prüfen, schreiben und vollständig vergleichen. |
-| Mit Gerät vergleichen | Alle Bytes des Geräte-LFI vergleichen, auch bei beschädigtem Geräteinhalt. |
+| Auswahl flashen | MBREC, BREC und LFI am Inhalt erkennen: einzeln, beliebig kombiniert oder als vollständiges ZIP-Paket. Vorher Rücksicherung speichern, danach vollständig zurücklesen. |
+| Mit Gerät vergleichen | Alle ausgewählten Bereiche byteweise vergleichen, bei BREC beide Kopien. Beschädigtes Geräte-LFI bleibt vergleichbar. |
 | ADFU betreten / verlassen | Den Wartungsmodus direkt in der App wechseln; Erfolg erst nach erkannter USB-Anmeldung melden. |
 | Player ausschalten | Eigenen RAM-Code laden und zurücklesen. Nach Startbestätigung USB abziehen; der Code wartet darauf. |
 
 **Full umfasst Bootdatensätze und LFI**, etwa 62 MB. Musikdateien, der übrige
 NAND-Inhalt und die SD-Karte sind nicht enthalten. **BREC gehört zur vollständigen
 Firmware**, einschließlich des frühen Startbilds. Eine einzelne LFI-`.bin`
-ist nur eine Teilaktualisierung; für BREC + LFI ein vollständiges Paket wiederherstellen.
+ist nur eine Teilaktualisierung. Für BREC + LFI beide BINs gemeinsam auswählen;
+für alle Bereiche zusätzlich MBREC oder ein vollständiges Sicherungspaket laden.
+Der Dateiname bestimmt niemals das Schreibziel. Unterschiedliche Dateien für
+denselben Bereich werden abgewiesen; identische Bootkopien werden zusammengefasst.
 
 Unvollständige Sicherungen bleiben speicherbar, werden jedoch nicht für Restore
 freigegeben. Kein unbestätigter Schreibbefehl wird automatisch wiederholt.
@@ -111,10 +114,12 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.2.0-beta.1 ist ein auf Hardware unverifizierter Build-Kandidat.**
+**v0.2.0-beta.2 ist ein auf Hardware unverifizierter Build-Kandidat.**
 Automatisierte Tests prüfen native Abläufe, ZIP-Austausch mit JavaScript,
 fehlende Bestätigungen, Zeitüberschreitungen, Rücklesefehler, GUI, HTTP-Grenzen
-und simuliertes WebUSB. Der EXE-Selbsttest prüft Ressourcen, Icons und Kopplung
+und simuliertes WebUSB. Alle sieben Bereichskombinationen werden mit simulierten
+Antworten geprüft, einschließlich BREC-Prüfsummenkorrektur und beider Bootkopien.
+Der EXE-Selbsttest prüft Ressourcen, Icons und Kopplung
 ohne Gerätezugriff. Der zugrunde liegende native Schreibweg und die korrigierte
 BREC-Vorbereitung stammen aus dem bestehenden Toolkit; die neue GUI-Ausführung
 wurde in dieser Version nicht am Player getestet.

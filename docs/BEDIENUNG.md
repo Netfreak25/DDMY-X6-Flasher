@@ -21,26 +21,48 @@ Schlägt nur das Speichern fehl, erscheint **Gelesene Sicherung speichern**.
 Dieser Knopf speichert die vorhandenen Daten ohne erneuten Gerätezugriff.
 Zusätzlich bleiben die gelesenen Dateien im privaten Arbeitsverzeichnis erhalten.
 
-## Firmware flashen · LFI
+## Firmware automatisch erkennen und flashen
 
-1. Eine passende LFI-`.bin` auswählen.
-2. **Firmware flashen · LFI** wählen und bestätigen.
-3. Speicherort für das bisherige LFI wählen.
+1. Eine oder mehrere BIN-Dateien auswählen (Mehrfachauswahl mit Strg), oder ein vollständiges `.x6backup.zip`.
+2. Die Anzeige nennt automatisch **MBREC**, **BREC**, **LFI** oder ihre Kombination. Erkannt wird der Inhalt, unabhängig vom Dateinamen.
+3. **Auswahl flashen** wählen, die angezeigten Bereiche bestätigen und den Speicherort der Rücksicherung wählen.
 4. Sichern → Schreiben → vollständiges Rücklesen → Neustart abwarten.
 
 Die Sicherung wird geschlossen, auf Datenträger geschrieben und vollständig
 verglichen, bevor der erste Flash-Schreibbefehl startet. Die ausgewählte
-Firmwaredatei bleibt unverändert. Header, Größe und alle 148 Dateiprüfsummen
-werden geprüft.
+Firmwaredatei bleibt unverändert. LFI-Header, Größe und alle 148 Dateiprüfsummen
+werden geprüft. Bei BREC werden NAND-Zuordnung, Größe sowie Code- und Headerprüfsumme
+geprüft; bei MBREC Marker, Größe und NAND-Geometrie.
 
-Eine einzelne `.bin` ändert nur das LFI. Für die vollständige Firmware samt
-BREC und frühem Startbild ein vollständiges Paket wiederherstellen.
+| Auswahl | Geschrieben wird |
+| --- | --- |
+| MBREC-BIN | MBREC |
+| BREC-BIN | Beide BREC-Kopien, einschließlich frühem Startbild |
+| LFI-BIN | Hauptfirmware |
+| Mehrere BINs | Genau die erkannten Bereiche, in Reihenfolge MBREC → BREC → LFI |
+| Vollständiges Sicherungs-ZIP | MBREC, beide BREC-Kopien und LFI |
+
+Alle sieben Kombinationen sind möglich. Identische doppelt ausgewählte Bootkopien
+werden zusammengefasst; widersprüchliche Kopien werden abgewiesen. Bereits für
+die Übertragung angepasste BREC-Dateien werden abgelehnt: die App braucht den
+fertigen BREC aus dem Dump und bereitet selbst eine getrennte Übertragungskopie vor.
+
+Bei LFI allein wird das bisherige LFI als BIN gespeichert. Sobald MBREC oder BREC
+gewählt ist, wird vorher eine vollständige, geprüfte ZIP-Sicherung erstellt.
+Ist das nicht möglich, stoppt dieser Weg vor dem Schreiben; für eine Reparatur
+aus vorhandener Sicherung dient **Sicherung wiederherstellen**.
+
+MBREC-Bootpositionen und NAND-Geometrie müssen zum angeschlossenen X6 passen.
+Nach Boot-Schreibvorgängen werden beide BREC-Kopien und MBREC zurückgelesen:
+ausgewählte Bereiche müssen dem Kandidaten entsprechen, andere Bootbereiche
+müssen unverändert sein. Nur nach erfolgreicher Prüfung wird der Neustart versucht.
 
 ## Mit Gerät vergleichen
 
-LFI-Datei wählen, dann **Mit Gerät vergleichen**. Der gesamte LFI-Bereich wird
-gelesen. Das Ergebnis zeigt **identisch** oder die Anzahl unterschiedlicher Bytes.
-Auch ein beschädigter Header auf dem Gerät verhindert den Vergleich nicht.
+Dateien wie beim Flashen auswählen, dann **Mit Gerät vergleichen**. Die erkannten
+Bereiche werden vollständig gelesen, BREC in beiden Kopien. Das Ergebnis zeigt
+**identisch** oder die Summe unterschiedlicher Bytes über die verglichenen Kopien.
+Ein beschädigter LFI-Header auf dem Gerät verhindert den LFI-Vergleich nicht.
 Offsets und Hashes stehen in **Details**. Es wird nicht in den Flash geschrieben.
 
 ## Sicherung wiederherstellen
@@ -107,6 +129,6 @@ Rücklesung, beide BREC-Kopien und LFI. Musik und SD-Karte gehören nicht dazu.
 
 ## Prüfstand
 
-Version 0.2.0-beta.1: automatisiert und mit vorhandenen Dateien offline geprüft,
+Version 0.2.0-beta.2: automatisiert und mit vorhandenen Dateien offline geprüft,
 **auf Hardware unverifizierter Build-Kandidat**. Für diese Version wurde der
 physische Player nicht angesprochen.

@@ -5,6 +5,7 @@ import threading
 import tkinter as tk
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -84,13 +85,37 @@ class HelperTests(unittest.TestCase):
         self.assertIsNone(self.jobs.owner)
 
     def test_cancelled_save_never_starts_dump_or_flash(self):
-        self.window.firmware.set("selected.bin")
+        self.window.operations.selection = SimpleNamespace(label="BREC + LFI", areas=("brec", "lfi"), has_boot=True)
         with mock.patch.object(helper.filedialog, "asksaveasfilename", return_value=""), \
                 mock.patch.object(helper.messagebox, "askokcancel", return_value=True), \
                 mock.patch.object(self.window, "start") as start:
             self.window.dump()
             self.window.flash()
             start.assert_not_called()
+
+    def test_detected_components_are_confirmed_and_passed_to_flash_with_zip_backup(self):
+        selection = SimpleNamespace(label="MBREC + BREC", areas=("mbrec", "brec"), has_boot=True,
+                                    sources=(Path("arbitrary.bin"), Path("second.bin")))
+        self.window.operations.selection = selection
+        self.window.events.put({"event": "result", "message": "Erkannt", "selection_ready": True})
+        self.window.poll()
+        self.assertIn("MBREC + BREC", self.window.firmware.get())
+        with mock.patch.object(helper.messagebox, "askokcancel", return_value=True) as confirm, \
+                mock.patch.object(helper.filedialog, "asksaveasfilename", return_value="before.zip") as save, \
+                mock.patch.object(self.window.operations, "flash_selection", return_value={"message": "Geprüft"}) as flash:
+            self.window.flash()
+            self.finish()
+        self.assertIn("MBREC + BREC", confirm.call_args.args[1])
+        self.assertIn("beiden Bootkopien", confirm.call_args.args[1])
+        self.assertEqual(save.call_args.kwargs["defaultextension"], ".x6backup.zip")
+        flash.assert_called_once_with(selection, Path("before.zip"))
+
+    def test_file_picker_accepts_multiple_files_and_runs_offline_identification(self):
+        with mock.patch.object(helper.filedialog, "askopenfilenames", return_value=("a.bin", "b.bin")), \
+                mock.patch.object(self.window.operations, "inspect", return_value={"message": "Erkannt"}) as inspect:
+            self.window.choose_firmware()
+            self.finish()
+        inspect.assert_called_once_with((Path("a.bin"), Path("b.bin")))
 
     def test_restore_folder_and_unverified_result_are_visible(self):
         with mock.patch.object(helper.filedialog, "askdirectory", return_value="backup-folder"):

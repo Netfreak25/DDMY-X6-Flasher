@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import x6_archive as archive
+import x6_images as images
 import x6_poweroff
 import x6_reset
 import x6_toolkit as tk
@@ -42,6 +43,7 @@ class NativeOperations:
         self.serial: str | None = None
         self.log: tk.RunLog | None = None
         self.pending_backup: Path | None = None
+        self.selection: images.Selection | None = None
 
     def begin(self, name: str) -> tk.RunLog:
         self.log = tk.new_run(name)
@@ -94,6 +96,103 @@ class NativeOperations:
         shutil.copyfile(image, staged)
         tk.validate_lfi(staged, self.profile)
         return staged
+
+    def inspect(self, sources: tuple[Path, ...]) -> dict:
+        """Identify and stage a user's selection entirely offline."""
+        self.selection = None
+        self.begin("select-images")
+        self.selection = images.select_images(sources, self.log.directory / "selection", self.profile)
+        self.log.event("selection", areas=self.selection.areas, hashes=self.selection.hashes)
+        return {"message": f"Erkannt: {self.selection.label}. Dateien geprüft.", "selection_ready": True}
+
+    def check_selection_device(self, selection: images.Selection) -> None:
+        if selection.serial and self.serial and selection.serial.upper() != self.serial.upper():
+            raise tk.ToolkitError("Die Sicherung gehört zu einem anderen X6.")
+
+    def compare_selection(self, selection: images.Selection) -> dict:
+        """Compare exactly the selected areas, including both physical boot copies."""
+        self.begin("compare-components")
+        selected = images.restage(selection, self.log.directory / "selection", self.profile)
+        backend = self.session()
+        self.check_selection_device(selected)
+        after = self.log.directory / "readback"
+        after.mkdir()
+        if "lfi" in selected.files:
+            self.step("Geräte-LFI vergleichen")
+            tk.read_lfi(backend, after / "lfi.bin", "compare_read", validate=False)
+        if selected.has_boot:
+            self.step("Beide Bootkopien vergleichen")
+            tk.read_boot(backend, after)
+        results = {name: compare_images(selected.files[area], after / name)
+                   for area in selected.areas for name in images.AREA_FILES[area]}
+        different = sum(item["different"] for item in results.values())
+        self.log.event("component_comparison", files=results, different=different)
+        return {"message": f"{selected.label}: " + ("identisch." if not different else f"{different:,} unterschiedliche Bytes."),
+                "identical": not different, "different": different, "files": results, "warning": bool(different)}
+
+    def backup_before_boot_write(self, backend: tk.ActionsBackend, destination: Path) -> Path:
+        """Save a complete, compatible recovery package before changing boot areas."""
+        self.step("Vollständige Rücksicherung erstellen")
+        before = self.log.directory / "before"
+        before.mkdir()
+        tk.read_lfi(backend, before / "lfi.bin", "read_before")
+        tk.read_boot(backend, before)
+        manifest = {"schema": 1, "model": self.profile.model, "nand_id": self.profile.nand_id.hex(),
+                    "status": "complete", "device_serial": self.serial,
+                    "steps": {name: {"status": "ok"} for name in ("lfi", "brec0", "brec1")},
+                    "files": {name: {"size": (before / name).stat().st_size, "sha256": tk.sha256_file(before / name)}
+                              for name in tk.BUNDLE_FILES}}
+        tk.write_manifest(before, manifest)
+        tk.verify_bundle(before, self.profile)
+        self.pending_backup = before
+        archive.export_backup(before, destination)
+        self.pending_backup = None
+        self.log.event("backup_saved", path=str(destination))
+        return before
+
+    def flash_selection(self, selection: images.Selection, destination: Path) -> dict:
+        """Write only detected areas in MBREC → BREC → LFI order, without retries."""
+        self.begin("flash-components")
+        if any(destination.resolve() == source.resolve() or source.is_dir() and source.resolve() in destination.resolve().parents
+               for source in selection.sources):
+            raise tk.ToolkitError("Die Rücksicherung darf die ausgewählten Quelldateien nicht überschreiben.")
+        selected = images.restage(selection, self.log.directory / "selection", self.profile)
+        if not selected.has_boot:
+            return self.flash(selected.files["lfi"], destination)
+        if not self.profile.boot_write_mapping_verified:
+            raise tk.ToolkitError("Boot-Schreibweg nicht freigegeben. Bitte die Notfall-Wiederherstellung verwenden.")
+        # Preflight the BREC transfer before MBREC or any other flash command.
+        checked = tk.ActionsBackend(self.profile, self.runtime, self.log)
+        if "brec" in selected.files:
+            prepare_transfer(selected.files["brec"].read_bytes(), checked.file("fwsc.bin").read_bytes(), self.profile)
+        backend = self.session()
+        self.check_selection_device(selected)
+        before = self.backup_before_boot_write(backend, destination)
+        if "lfi" in selected.files:
+            tk.check_preserved_header(selected.files["lfi"], before / "lfi.bin", self.profile)
+        if "mbrec" in selected.files and selected.files["mbrec"].read_bytes()[3:16] != (before / "mbrec.bin").read_bytes()[3:16]:
+            raise tk.ToolkitError("MBREC-Bootpositionen oder NAND-Geometrie passen nicht zum Gerät.")
+        # The NAND boot reader occupies the same RAM as FWSC: reload before writing.
+        tk.start_fwsc(backend)
+        for area in selected.areas:
+            self.step(f"{area.upper()} schreiben")
+            tk.write_area(backend, f"write_{area}", self.profile.protocol[f"{area}_sector"], selected.files[area])
+        tk.finalize_flash(backend)
+        self.step("Geschriebene Bereiche und beide Bootkopien prüfen")
+        after = self.log.directory / "readback"
+        after.mkdir()
+        if "lfi" in selected.files:
+            tk.read_lfi(backend, after / "lfi.bin", "read_after")
+            tk.compare_files(selected.files["lfi"], after / "lfi.bin")
+        tk.read_boot(backend, after)
+        for area in ("mbrec", "brec"):
+            for name in images.AREA_FILES[area]:
+                tk.compare_files(selected.files.get(area, before / name), after / name)
+        self.log.event("components_verified", areas=selected.areas)
+        normal = self.reboot(backend)
+        return {"message": f"{selected.label} geschrieben und vollständig verifiziert. " +
+                ("Player normal gestartet." if normal else "Neustart noch nicht bestätigt."),
+                "areas": selected.areas, "normal_mode": normal, "warning": not normal}
 
     def compare(self, image: Path) -> dict:
         self.begin("compare")

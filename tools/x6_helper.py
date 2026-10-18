@@ -103,15 +103,15 @@ class HelperWindow:
 
         self.firmware = tk.StringVar()
         self.backup = tk.StringVar()
-        firmware = self.section(panel, "Firmware · LFI-Teilaktualisierung")
+        firmware = self.section(panel, "Firmware · automatische Bereichserkennung")
         self.file_row(firmware, self.firmware, self.choose_firmware)
         row = tk.Frame(firmware, bg="white")
         row.pack(fill="x", pady=(6, 0))
-        self.flash_button = self.button(row, "Firmware flashen · LFI", self.flash, device=True)
+        self.flash_button = self.button(row, "Auswahl flashen", self.flash, device=True)
         self.flash_button.pack(side="left", padx=(0, 8))
         self.compare_button = self.button(row, "Mit Gerät vergleichen", self.compare, device=True)
         self.compare_button.pack(side="left")
-        self.label(firmware, "Einzelne .bin: nur LFI. Für BREC und das frühe Startbild: vollständige Sicherung.",
+        self.label(firmware, "MBREC, BREC, LFI · einzeln, mehrere BINs oder ein vollständiges ZIP-Paket.",
                    background="white").pack(anchor="w", pady=(5, 0))
 
         backup = self.section(panel, "Vollständige Sicherung")
@@ -188,6 +188,9 @@ class HelperWindow:
             button.configure(state="disabled" if self.busy else "normal")
         for button in self.device_controls:
             button.configure(state="normal" if self.connected and not self.busy else "disabled")
+        if self.operations.selection is None:
+            self.flash_button.configure(state="disabled")
+            self.compare_button.configure(state="disabled")
         if not self.server:
             self.online_button.configure(state="disabled")
         self.connect_button.configure(text="Trennen" if self.connected else "Verbinden")
@@ -201,9 +204,13 @@ class HelperWindow:
             self.progress_label.pack(anchor="w")
 
     def choose_firmware(self):
-        selected = filedialog.askopenfilename(parent=self.root, title="X6-LFI auswählen", filetypes=[("X6-Firmware", "*.bin")])
+        selected = filedialog.askopenfilenames(parent=self.root, title="X6-Firmware auswählen (Mehrfachauswahl möglich)",
+                                               filetypes=[("X6-Firmware oder Paket", "*.bin *.zip"), ("Alle Dateien", "*.*")])
         if selected:
-            self.firmware.set(selected)
+            sources = tuple(Path(path) for path in selected)
+            self.firmware.set("Dateien werden geprüft …")
+            self.operations.selection = None
+            self.start("Dateien erkennen und prüfen", lambda: self.operations.inspect(sources))
 
     def choose_backup(self):
         selected = filedialog.askopenfilename(parent=self.root, title="X6-Sicherung auswählen", filetypes=[("X6-Sicherung", "*.zip")])
@@ -231,23 +238,29 @@ class HelperWindow:
             self.start("Sicherung erstellen", lambda: self.operations.dump(Path(destination)))
 
     def compare(self):
-        if not self.firmware.get():
+        selection = self.operations.selection
+        if selection is None:
             self.choose_firmware()
-        if self.firmware.get():
-            image = Path(self.firmware.get())
-            self.start("Mit Gerät vergleichen", lambda: self.operations.compare(image))
+            return
+        self.start("Mit Gerät vergleichen", lambda: self.operations.compare_selection(selection))
 
     def flash(self):
-        if not self.firmware.get():
+        selection = self.operations.selection
+        if selection is None:
             self.choose_firmware()
-        if not self.firmware.get() or not messagebox.askokcancel("LFI flashen", "Nur das LFI aktualisieren?\n"
-                "Zuerst wird das bisherige LFI gespeichert; danach wird vollständig geschrieben und zurückgelesen.", parent=self.root):
             return
-        destination = filedialog.asksaveasfilename(parent=self.root, title="Bisheriges LFI vor dem Flashen speichern",
-                                                  defaultextension=".bin", initialfile="x6-vor-flash.bin", filetypes=[("X6-LFI", "*.bin")])
+        description = f"Erkannte Bereiche: {selection.label}\n"
+        if "brec" in selection.areas:
+            description += "BREC wird in beiden Bootkopien aktualisiert.\n"
+        description += "Zuerst Rücksicherung speichern, dann diese Bereiche schreiben und vollständig zurücklesen."
+        if not messagebox.askokcancel("Auswahl flashen", description, parent=self.root):
+            return
+        extension = ".x6backup.zip" if selection.has_boot else ".bin"
+        destination = filedialog.asksaveasfilename(parent=self.root, title="Rücksicherung vor dem Flashen speichern",
+                                                  defaultextension=extension, initialfile="x6-vor-flash" + extension,
+                                                  filetypes=[("X6-Sicherung", "*.zip" if selection.has_boot else "*.bin")])
         if destination:
-            image = Path(self.firmware.get())
-            self.start("Firmware flashen · LFI", lambda: self.operations.flash(image, Path(destination)))
+            self.start(f"{selection.label} flashen", lambda: self.operations.flash_selection(selection, Path(destination)))
 
     def restore(self):
         if not self.backup.get():
@@ -334,6 +347,9 @@ class HelperWindow:
                     self.progress_text.set(f"{done / total:.0%} · bestätigte Sektoren")
             elif kind == "result":
                 self.activity.set(event["message"])
+                if event.get("selection_ready"):
+                    selected = self.operations.selection
+                    self.firmware.set(f"{selected.label} · " + ", ".join(path.name for path in selected.sources))
                 if event.get("connected"):
                     self.connected = True
                     self.status.set(event["message"])

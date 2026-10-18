@@ -7,7 +7,7 @@ import { Buffer } from 'node:buffer';
 import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { packBackup } from '../../lib/archive.js';
-import { profile, files as original } from '../fixtures.js';
+import { profile, files as original, payload } from '../fixtures.js';
 
 let server, browser, origin;
 const zip = packBackup(original, JSON.parse(new TextDecoder().decode(original['manifest.json'])));
@@ -29,6 +29,8 @@ before(async () => {
   await mkdir('private_dumps/web-tests', {recursive: true});
   await writeFile('private_dumps/web-tests/synthetic.x6backup.zip', zip);
   await writeFile('private_dumps/web-tests/synthetic.bin', original['lfi.bin']);
+  await writeFile('private_dumps/web-tests/first.bin', original['mbrec.bin']);
+  await writeFile('private_dumps/web-tests/second.bin', original['brec0.bin']);
 });
 
 after(async () => {
@@ -62,16 +64,23 @@ async function pageFixture(bootMapping = profile.boot_write_mapping_verified) {
     const name = new URL(route.request().url()).pathname.split('/').at(-1);
     return route.fulfill({body: Buffer.from(original[name])});
   });
+  await page.route('**/test-driver-pure.js', async route => route.fulfill({contentType: 'text/javascript',
+    body: (await readFile('lib/driver.js', 'utf8')).replace("'./formats.js'", "'./lib/formats.js'")}));
+  await page.route('**/test-payload/*', async route => route.fulfill({
+    body: Buffer.from(await payload(new URL(route.request().url()).pathname.split('/').at(-1))),
+  }));
   await page.route('**/lib/transport.js', route => route.fulfill({contentType: 'text/javascript', body: `
     export const usbId=()=>({vendorId:0x10d6,productId:0x10d6});
     export const delay=ms=>new Promise(resolve=>setTimeout(resolve,Math.min(ms,1)));
     export class ActionsUSB{constructor(device){this.device=device;this.alive=false;}async open(){this.alive=true;}async info(){return new Uint8Array([0,67,65,68,70,85,68,48,81]);}async close(){this.alive=false;}}
   `}));
   await page.route('**/lib/driver.js', route => route.fulfill({contentType: 'text/javascript', body: `
+    export {bootLayout,brecLength,prepareBrecTransfer} from '/test-driver-pure.js';
     const file=async name=>new Uint8Array(await (await fetch('/test-file/'+name)).arrayBuffer());
     export class X6Driver{
       constructor(usb){this.usb=usb;}
       async bootstrap(){}
+      async payload(name){return new Uint8Array(await (await fetch('/test-payload/'+name)).arrayBuffer());}
       async flashDriver(){window.__calls.push('driver');}
       async readLfi(progress){window.__calls.push('read');await new Promise(r=>setTimeout(r,150));let data=await file('lfi.bin');progress?.(data.length,data.length);if(window.__mismatch)data[0]^=1;return data;}
       async readBoot(index){window.__calls.push('boot'+index);if(window.__badBoot&&index===0)throw Error('bad brec checksum');return index===0?{'mbrec.bin':await file('mbrec.bin'),'brec0.bin':await file('brec0.bin')}:{'mbrec_copy.bin':await file('mbrec_copy.bin'),'brec1.bin':await file('brec1.bin')};}
@@ -293,6 +302,39 @@ test('flash uses confirmation, saves before writing and shows verified restart',
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'LFI geschrieben und verifiziert.');
   assert.deepEqual(await page.evaluate(() => window.__calls), ['read', 'save', 'driver', 'lfi', 'final', 'read', 'reset']);
   assert.equal(await page.locator('#device-badge').textContent(), 'Normal gestartet');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('multiple BINs are detected offline and confirmed as MBREC plus both BREC copies', async () => {
+  const {page, context, errors, apiCalls} = await pageFixture();
+  await page.locator('#firmware-file').setInputFiles(['private_dumps/web-tests/second.bin', 'private_dumps/web-tests/first.bin']);
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Firmware ist gültig.');
+  assert.match(await page.locator('#firmware-info').textContent(), /MBREC \+ BREC/);
+  assert.deepEqual(apiCalls, []);
+  await connect(page);
+  await page.evaluate(() => {window.__calls = [];});
+  await page.locator('#flash').click();
+  await page.locator('#confirmation').waitFor({state: 'visible'});
+  assert.match(await page.locator('#confirm-title').textContent(), /MBREC \+ BREC/);
+  assert.match(await page.locator('#confirm-description').textContent(), /beiden Bootkopien/);
+  await page.locator('#confirm-go').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'MBREC + BREC geschrieben und verifiziert.');
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['read', 'boot0', 'boot1', 'save', 'driver', 'mbrec', 'brec', 'final', 'boot0', 'boot1', 'reset']);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('firmware picker accepts complete ZIP and clears previous selection on invalid input', async () => {
+  const {page, context, errors} = await pageFixture();
+  await page.locator('#firmware-file').setInputFiles('private_dumps/web-tests/synthetic.x6backup.zip');
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Firmware ist gültig.');
+  assert.match(await page.locator('#firmware-info').textContent(), /MBREC \+ BREC \+ LFI/);
+  await connect(page);
+  await page.locator('#firmware-file').setInputFiles({name: 'broken.bin', mimeType: 'application/octet-stream', buffer: Buffer.from('broken')});
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vorgang gestoppt');
+  assert.equal(await page.locator('#flash').isDisabled(), true);
+  assert.equal(await page.locator('#verify').isDisabled(), true);
   assert.deepEqual(errors, []);
   await context.close();
 });

@@ -1,7 +1,8 @@
 import { ActionsUSB, usbId, delay } from './lib/transport.js';
 import { X6Driver } from './lib/driver.js';
 import { X6Operations, incompleteDumpMessage } from './lib/workflows.js';
-import { validateLfi, validateBundle, sha256, assertSame } from './lib/formats.js';
+import { validateBundle, sha256, assertSame } from './lib/formats.js';
+import { selectImages, selectionLabel, hasBoot } from './lib/images.js';
 import { packBackup, unpackBackup, importFolder } from './lib/archive.js';
 import { sessionFromLocation, bridgeRequest, pairHelper, saveSession } from './lib/bridge.js';
 
@@ -237,21 +238,17 @@ function confirmAction(title, description, emergency = false) {
 }
 
 $('firmware-file').addEventListener('change', event => {
-  const file = event.target.files[0];
-  if (!file) return;
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
   state.firmware = null;
-  $('file-heading').textContent = file.name;
-  $('firmware-info').textContent = 'Datei wird geprüft …';
+  $('file-heading').textContent = files.map(file => file.name).join(', ');
+  $('firmware-info').textContent = 'Dateien werden erkannt und geprüft …';
   void run('Firmware prüfen', async () => {
-    if (file.size !== state.profile.lfi_size) throw new Error('Die Datei hat nicht die erwartete X6-Firmwaregröße.');
-    const data = new Uint8Array(await file.arrayBuffer());
-    validateLfi(data, state.profile);
-    const hash = await sha256(data);
-    state.firmware = {name: file.name, data, hash};
-    $('file-heading').textContent = file.name;
-    $('firmware-info').textContent = `${sizeLabel(data.length)} · Alle 148 Dateiprüfsummen gültig`;
-    log({event: 'firmware_selected', name: file.name, sha256: hash});
-    result('Firmware ist gültig.', 'Du kannst sie jetzt mit dem Player vergleichen oder flashen.', 'success');
+    const selected = await selectImages(files, state.profile);
+    state.firmware = selected;
+    $('firmware-info').textContent = `Erkannt: ${selectionLabel(selected)} · Dateien geprüft`;
+    log({event: 'firmware_selected', names: selected.names, hashes: selected.hashes});
+    result('Firmware ist gültig.', `${selectionLabel(selected)} kann jetzt verglichen oder geflasht werden.`, 'success');
   });
 });
 
@@ -273,26 +270,31 @@ $('backup-file').addEventListener('change', event => { if (event.target.files.le
 $('backup-folder').addEventListener('change', event => { if (event.target.files.length) void selectBackup(event.target.files, true); });
 
 $('verify').addEventListener('click', () => void run('Mit Gerät vergleichen', async () => {
-  const compared = await operations().verify(state.firmware.data);
+  const compared = await operations().verifySelection(state.firmware);
   result(compared.identical ? 'Firmware ist identisch.' : 'Firmware weicht ab.',
-    compared.identical ? 'Der gesamte Firmwarebereich stimmt Byte für Byte mit der ausgewählten Datei überein.' :
+    compared.identical ? `Alle ausgewählten Bereiche (${selectionLabel(state.firmware)}) stimmen Byte für Byte überein.` :
       `${compared.different.toLocaleString('de-DE')} Bytes unterscheiden sich. Der Vergleich hat nichts in den Flash geschrieben.`,
     compared.identical ? 'success' : 'warning');
 }));
 
 $('flash').addEventListener('click', () => void run('Firmware flashen', async () => {
-  if (!await confirmAction('LFI-Teilaktualisierung installieren?', `${state.firmware.name}\nHier wird nur das LFI geändert. Für die komplette Firmware mit BREC verwende ein vollständiges Paket. Zuerst wählst du den Speicherort für das bisherige LFI. Nach dem Schreiben wird das gesamte neue Image zurückgelesen und geprüft.`)) {
+  const selected = state.firmware, label = selectionLabel(selected), boot = hasBoot(selected);
+  const description = `Erkannte Bereiche: ${label}. ${selected.components.brec ? 'BREC wird in beiden Bootkopien aktualisiert. ' : ''}` +
+    'Zuerst wird die Rücksicherung gespeichert. Anschließend werden diese Bereiche geschrieben und vollständig zurückgelesen.';
+  if (!await confirmAction(`${label} flashen?`, description)) {
     result('Abgebrochen', 'Es wurde nichts geschrieben.'); return;
   }
-  const handle = await savePicker(`x6-vor-flash-${stamp()}.bin`, '.bin');
-  const outcome = await operations().flash(state.firmware.data, async data => {
+  const extension = boot ? '.zip' : '.bin', name = `x6-vor-flash-${stamp()}${boot ? '.x6backup.zip' : '.bin'}`;
+  const handle = await savePicker(name, extension);
+  const outcome = await operations().flashSelection(selected, async backup => {
+    const data = boot ? packBackup(backup.files, backup.manifest) : backup;
     // Keep it recoverable in this session if a filesystem error interrupts saving.
-    state.pendingBackup = {data, name: `x6-vor-flash-${stamp()}.bin`, extension: '.bin'};
+    state.pendingBackup = {data, name, extension};
     await saveToHandle(handle, data);
     state.pendingBackup = null;
     return true;
   });
-  result('LFI geschrieben und verifiziert.', outcome.normalMode ? 'Der Player ist wieder normal gestartet.' :
+  result(`${label} geschrieben und verifiziert.`, outcome.normalMode ? 'Der Player ist wieder normal gestartet.' :
     'Der vollständige Rücklesevergleich war erfolgreich. Der normale Neustart ist noch nicht bestätigt.', outcome.normalMode ? 'success' : 'warning');
 }));
 
