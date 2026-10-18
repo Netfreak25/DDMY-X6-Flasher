@@ -3,7 +3,7 @@ import { X6Driver } from './lib/driver.js';
 import { X6Operations } from './lib/workflows.js';
 import { validateLfi, validateBundle, sha256, assertSame } from './lib/formats.js';
 import { packBackup, unpackBackup, importFolder } from './lib/archive.js';
-import { sessionFromLocation, bridgeRequest } from './lib/bridge.js';
+import { sessionFromLocation, bridgeRequest, pairHelper, saveSession } from './lib/bridge.js';
 import { hex } from './lib/formats.js';
 
 const $ = id => document.getElementById(id);
@@ -11,7 +11,7 @@ let session = null, sessionError = null;
 try { session = sessionFromLocation(location, sessionStorage); }
 catch (error) { sessionError = error; }
 history.replaceState(null, '', location.pathname);
-const state = {profile: null, usb: null, driver: null, serial: null, firmware: null, backup: null,
+const state = {profile: null, site: null, usb: null, driver: null, serial: null, firmware: null, backup: null,
   busy: false, permissionNeeded: false, expectedReset: false, report: [], pendingBackup: null};
 const sizeLabel = size => `${(size / 1_000_000).toFixed(1).replace('.', ',')} MB`;
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
@@ -114,6 +114,7 @@ async function establish(device) {
 }
 
 $('connect').addEventListener('click', () => {
+  if (state.busy || !state.profile) return;
   // The browser chooser must be requested inside this actual user gesture.
   let chosen;
   if (state.permissionNeeded && !state.driver) {
@@ -129,6 +130,9 @@ $('connect').addEventListener('click', () => {
       return;
     }
     if (chosen) { await establish(await chosen); return; }
+    progress('Windows-App verbinden', 0, 0);
+    session = saveSession(await pairHelper(session?.origin || state.site.helper_origin, state.site.helper_timeout_ms), location, sessionStorage);
+    $('setup-note').hidden = true;
     const current = await api('status');
     if (current.mode === 'missing') throw new Error('Kein X6 gefunden. Bitte den Player per USB anschließen.');
     if (current.mode === 'normal') {
@@ -141,6 +145,12 @@ $('connect').addEventListener('click', () => {
     if (devices.length > 1) throw new Error('Mehrere passende Geräte gefunden. Bitte nur einen X6 anschließen.');
     if (devices.length === 1) { await establish(devices[0]); return; }
     state.permissionNeeded = true;
+    // Fast pairing can retain the click's transient activation. After a slow
+    // ADFU switch, request a fresh click instead of triggering SecurityError.
+    if (navigator.userActivation?.isActive) {
+      await establish(await navigator.usb.requestDevice({filters: [id]}));
+      return;
+    }
     deviceStatus('ADFU bereit', 'Bitte einmal „USB-Zugriff erlauben“ anklicken und den Player auswählen.');
     result('USB-Zugriff erlauben', 'Der X6 ist bereit. Bestätige den Zugriff über die Schaltfläche oben.');
   });
@@ -328,6 +338,7 @@ async function init() {
     if (!profileResponse.ok || !siteResponse.ok) throw new Error('Die Website konnte ihre Konfiguration nicht laden.');
     state.profile = await profileResponse.json();
     const site = await siteResponse.json();
+    state.site = site;
     $('helper-download').href = site.helper_download;
     $('repository-link').href = site.repository;
     $('setup-note').hidden = Boolean(session);

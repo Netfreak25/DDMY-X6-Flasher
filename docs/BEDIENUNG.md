@@ -4,7 +4,7 @@
 
 Das Windows-Helper-ZIP aus der Release entpacken und **DDMY X6 Helper.exe**
 öffnen. Die portable App zeigt ein kleines Fenster und öffnet den Flasher in
-Edge oder Chrome. Das Fenster während der Verwendung offen lassen und danach
+Chrome, falls installiert, sonst Edge. Das Fenster während der Verwendung offen lassen und danach
 schließen. Es gibt keinen Windows-Dienst, Autostart oder Hintergrundbetrieb
 nach dem Schließen.
 
@@ -12,15 +12,24 @@ Die EXE enthält Python und die sechs generischen RAM-Hilfsdateien. Eine
 vollständige Gerätefirmware ist nicht enthalten. **Offline öffnen** lädt die
 mitgelieferte Oberfläche direkt vom Rechner.
 
+Ab **Beta 2** kann die Pages-Seite auch direkt in einem vorhandenen Chrome-Tab
+geöffnet werden. Die App muss lediglich laufen. Die Version steht im App-Fenster;
+zum Aktualisieren die alte App schließen und die neue EXE starten.
+
 ## Verbinden
 
 1. Den X6 per USB anschließen.
-2. **Verbinden** im Flasher anklicken. Die App erkennt den internen Player
-   und übernimmt den Wechsel nach ADFU.
-3. **USB-Zugriff erlauben** anklicken und den ADFU-X6 auswählen.
+2. **Verbinden** im Flasher anklicken. Die Seite koppelt sich mit der laufenden
+   App. Diese erkennt den internen Player und übernimmt den Wechsel nach ADFU.
+3. Den ADFU-X6 im USB-Dialog auswählen. Dauert der Wechsel länger, zuerst
+   **USB-Zugriff erlauben** anklicken: Chrome benötigt dafür eine aktuelle
+   Benutzeraktion.
 
 Chrome/Edge fragt gegebenenfalls nach Zugriff auf die lokale App; diesen für
 unsere Pages-Seite erlauben. WinUSB muss für `10D6:10D6` installiert sein.
+Die Berechtigung kann in aktuellem Chrome als Zugriff auf andere Apps und
+Dienste auf diesem Gerät erscheinen. Sie betrifft den lokalen HTTP-Helper;
+die anschließende USB-Geräteauswahl ist eine eigene Berechtigung.
 Wenn Windows beim Wechsel Zugriff verweigert, die App schließen und über
 **Als Administrator ausführen** erneut starten. Bei mehreren passenden
 Playern bricht die Auswahl ab; bitte nur einen X6 anschließen.

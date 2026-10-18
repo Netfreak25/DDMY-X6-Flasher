@@ -46,7 +46,7 @@ class HelperWindow:
         text = tk.Frame(top, bg=BACKGROUND)
         text.pack(side="left")
         tk.Label(text, text="DDMY X6", font=("Segoe UI", 21, "bold"), fg=INK, bg=BACKGROUND).pack(anchor="w")
-        tk.Label(text, text="Flasher · Windows-Helfer", font=("Segoe UI", 11), fg="#607771", bg=BACKGROUND).pack(anchor="w")
+        tk.Label(text, text=f"Windows-Helfer · {server.version}", font=("Segoe UI", 11), fg="#607771", bg=BACKGROUND).pack(anchor="w")
         tk.Label(panel, text="●  Bereit für den Flasher", font=("Segoe UI", 12, "bold"),
                  fg=TEAL, bg=BACKGROUND).pack(anchor="w", pady=(25, 10))
         tk.Label(panel, text="Dieses Fenster während des Flashens geöffnet lassen.\n"
@@ -87,7 +87,9 @@ def main() -> None:
     root = tk.Tk()
     root.withdraw()
     try:
-        server = web.WebServer(0, toolkit.Profile.load(), online=True)
+        # A known loopback port lets a directly opened Pages tab pair on click.
+        # Packaging tests use an ephemeral port and never contact a running app.
+        server = web.WebServer(0 if args.self_test else web.DEFAULT_PORT, toolkit.Profile.load(), online=True)
         for name in web.PAYLOAD_NAMES:
             server.payload(name)
         window = HelperWindow(root, server)

@@ -31,8 +31,8 @@ ist ein passendes Gesamtpaket über die Wiederherstellungsfunktion erforderlich.
 ## Schnellstart
 
 1. Die **Windows-App** aus der [aktuellen Release](https://github.com/Netfreak25/DDMY-X6-Flasher/releases) herunterladen und das ZIP entpacken.
-2. **DDMY X6 Helper.exe** per Doppelklick starten. Sie öffnet den Online-Flasher in Edge oder Chrome.
-3. Im Browser **Verbinden** wählen. Die App übernimmt den Wechsel nach ADFU; den USB-Zugriff anschließend im Browser bestätigen.
+2. **DDMY X6 Helper.exe** per Doppelklick starten. Chrome wird beim Öffnen bevorzugt. Die Pages-Seite kann auch direkt im bereits geöffneten Chrome-Tab aufgerufen werden.
+3. Im Browser **Verbinden** wählen. Die Seite koppelt sich mit der laufenden App, die den Wechsel nach ADFU übernimmt. Danach den X6 im USB-Dialog auswählen. Nach einem längeren Wechsel erscheint dafür **USB-Zugriff erlauben** als zweiter Klick.
 4. Eine Sicherung erstellen oder eine eigene Firmware auswählen.
 5. Nach der Nutzung die App schließen.
 
@@ -40,6 +40,8 @@ Die App ist portabel, hat ein eigenes Fenster und Taskleisten-Icon und benötigt
 keine separate Python-Installation. Sie installiert **keinen Windows-Dienst**,
 keinen Autostart und bleibt nach dem Schließen nicht im Hintergrund aktiv.
 Die Schaltfläche **Offline öffnen** verwendet die mitgelieferte lokale Website.
+Für die direkte Kopplung aus einem Pages-Tab ist mindestens **Helper Beta 2**
+erforderlich. Zum Aktualisieren die alte App schließen und die neue EXE starten.
 
 Voraussetzungen: Windows 10/11 (64 Bit), Chrome oder Edge und WinUSB für das
 ADFU-Gerät `10D6:10D6`. Der normale USB-Massenspeichertreiber bleibt bestehen.
@@ -54,10 +56,13 @@ generische RAM-Hilfsprogramme bereit. Boot- und Firmwaredaten überträgt der
 Browser **direkt per WebUSB** zum Player und zurück.
 
 Die Verbindung zur App läuft ausschließlich über `127.0.0.1`, mit einem zufälligen
-Sitzungsschlüssel und einer Prüfung der erlaubten Website-Herkunft. Die App
-öffnet die Seite mit dem Schlüssel im URL-Fragment; dieses wird nicht an den
-GitHub-Webserver übertragen. Chrome/Edge kann zusätzlich die Erlaubnis zum
-Zugriff auf die lokale App abfragen.
+Sitzungsschlüssel und einer Prüfung der erlaubten Website-Herkunft. Ein direkt
+geöffneter Pages-Tab holt den Schlüssel erst beim Klick auf **Verbinden** über
+den festen lokalen App-Port aus `site.json`. Der Kopplungsaufruf prüft Herkunft,
+Host und einen eigenen Anfrage-Header und greift noch nicht auf USB zu.
+Beim Öffnen durch die App ist zusätzlich die Übergabe im URL-Fragment möglich;
+der Schlüssel wird nicht an GitHub übertragen. Chrome kann die Erlaubnis für
+den Zugriff auf andere Apps auf diesem Gerät abfragen.
 
 Beim bloßen Öffnen der Seite oder App wird der Player **nicht abgefragt**.
 Firmware, Backups und Berichte bleiben auf dem eigenen Rechner. Es gibt keine

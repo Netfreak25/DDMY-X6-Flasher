@@ -104,6 +104,40 @@ class WebBridgeTests(unittest.TestCase):
         self.assertEqual(url.hostname, "netfreak25.github.io")
         self.assertEqual(parse_qs(url.fragment)["session"], [self.server.token])
 
+    def test_direct_pages_pairing_requires_exact_origin_host_and_custom_header(self):
+        origin = "https://netfreak25.github.io"
+        headers = {"Origin": origin, "X-X6-Pair": "1", "X-X6-Session": ""}
+        self.assertEqual(self.request("/api/pair", "POST", **headers)[0], 403)
+        self.server.allowed_origins.add(origin)
+        with mock.patch.object(toolkit, "probe_device") as probe, mock.patch.object(toolkit, "enter_adfu") as enter:
+            status, data = self.request("/api/pair", "POST", **headers)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(data), {"origin": self.server.origin, "token": self.server.token})
+            for invalid in ({"Origin": "https://evil.example"}, {"Origin": ""},
+                            {"Host": "evil.example"}, {"X-X6-Pair": ""}):
+                self.assertEqual(self.request("/api/pair", "POST", **{**headers, **invalid})[0], 403)
+            self.assertEqual(self.request("/api/enter-adfu", "POST", **headers)[0], 403)
+            probe.assert_not_called()
+            enter.assert_not_called()
+
+    def test_pairing_preflight_only_accepts_post_and_pair_header(self):
+        origin = "https://netfreak25.github.io"
+        self.server.allowed_origins.add(origin)
+        headers = {"Origin": origin, "Access-Control-Request-Method": "POST",
+                   "Access-Control-Request-Headers": "x-x6-pair"}
+        self.assertEqual(self.request("/api/pair", "OPTIONS", **headers)[0], 204)
+        self.assertEqual(self.request("/api/status", "OPTIONS", **headers)[0], 403)
+        headers["Access-Control-Request-Method"] = "GET"
+        self.assertEqual(self.request("/api/pair", "OPTIONS", **headers)[0], 403)
+
+    def test_launcher_prefers_chrome_when_both_browsers_are_installed(self):
+        import winreg
+
+        with mock.patch.object(winreg, "OpenKey") as key, mock.patch.object(winreg, "QueryValue", return_value="chrome.exe"), \
+                mock.patch.object(Path, "is_file", return_value=True):
+            self.assertEqual(web.browser_path(), Path("chrome.exe"))
+            self.assertTrue(key.call_args.args[1].endswith("chrome.exe"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,7 +20,7 @@ import x6_toolkit as toolkit
 
 WEB_ROOT = toolkit.ROOT
 SITE_CONFIG = WEB_ROOT / "site.json"
-DEFAULT_PORT = 8765
+DEFAULT_PORT = urlsplit(json.loads(SITE_CONFIG.read_text(encoding="utf-8"))["helper_origin"]).port
 PAYLOAD_NAMES = ("adfus.bin", "fwsc.bin", "nandhwsc.bin", "nandinfo.bin", "nandread.bin", "vram_last.bin")
 DEFAULT_PAYLOADS = WEB_ROOT / "runtime" if getattr(sys, "frozen", False) else toolkit.DEFAULT_RUNTIME
 
@@ -37,7 +37,9 @@ class WebServer(ThreadingHTTPServer):
         self.switch_lock = threading.Lock()
         super().__init__(("127.0.0.1", port), Handler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
-        self.pages_url = json.loads(SITE_CONFIG.read_text(encoding="utf-8"))["pages_url"]
+        site_config = json.loads(SITE_CONFIG.read_text(encoding="utf-8"))
+        self.pages_url = site_config["pages_url"]
+        self.version = site_config["version"]
         self.allowed_origins = {self.origin}
         if online:
             site = urlsplit(self.pages_url)
@@ -100,21 +102,42 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def do_OPTIONS(self) -> None:
-        """Allow only the configured Pages origin to preflight the token-protected API."""
+        """Preflight either origin-checked pairing or the session-protected API."""
         headers = {item.strip().lower() for item in self.headers.get("Access-Control-Request-Headers", "").split(",") if item.strip()}
+        pairing = self.path == "/api/pair"
+        expected_headers = {"x-x6-pair"} if pairing else {"x-x6-session"}
+        methods = ("POST",) if pairing else ("GET", "POST")
         if (self.headers.get("Host") != urlsplit(self.server.origin).netloc
                 or self.headers.get("Origin") not in self.server.allowed_origins
                 or not self.path.startswith("/api/")
-                or self.headers.get("Access-Control-Request-Method") not in ("GET", "POST")
-                or headers != {"x-x6-session"}):
+                or self.headers.get("Access-Control-Request-Method") not in methods
+                or headers != expected_headers):
             self.json_reply(403, {"error": "Nicht freigegebene Website oder Anfrage."})
             return
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
         self.send_header("Vary", "Origin")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST")
-        self.send_header("Access-Control-Allow-Headers", "X-X6-Session")
+        self.send_header("Access-Control-Allow-Methods", ", ".join(methods))
+        self.send_header("Access-Control-Allow-Headers", ", ".join(expected_headers))
         self.end_headers()
+
+    def pair(self) -> None:
+        """Give the configured website a session without touching the player.
+
+        The mandatory custom header forces browser preflight. Both preflight
+        and the POST require the exact configured origin and loopback Host;
+        an ordinary form or an unrelated website cannot obtain a session.
+        All hardware endpoints continue to require the random session token.
+        """
+        if (self.headers.get("Host") != urlsplit(self.server.origin).netloc
+                or self.headers.get("Origin") not in self.server.allowed_origins
+                or self.headers.get("X-X6-Pair") != "1"):
+            self.json_reply(403, {"error": "Diese Website darf sich nicht mit der App koppeln."})
+            return
+        if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Length", "0") != "0":
+            self.json_reply(400, {"error": "Die Kopplung nimmt keine Nutzdaten an."})
+            return
+        self.json_reply(200, {"origin": self.server.origin, "token": self.server.token})
 
     def do_GET(self) -> None:
         path = unquote(urlsplit(self.path).path)
@@ -150,6 +173,9 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, target.read_bytes(), (content_type or "application/octet-stream") + "; charset=utf-8")
 
     def do_POST(self) -> None:
+        if self.path == "/api/pair":
+            self.pair()
+            return
         if not self.authorized():
             self.json_reply(403, {"error": "Keine gültige lokale Sitzung."})
             return
@@ -171,10 +197,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def browser_path() -> Path:
-    """Find installed Edge/Chrome through Windows registration, without fixed paths."""
+    """Prefer Chrome; use Edge only when Chrome is not installed."""
     import winreg
 
-    for name in ("msedge.exe", "chrome.exe"):
+    for name in ("chrome.exe", "msedge.exe"):
         for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
             for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
                 try:

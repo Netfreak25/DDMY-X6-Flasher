@@ -45,6 +45,7 @@ async function pageFixture() {
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     apiCalls.push(path);
+    if (path === '/api/pair') return route.fulfill({json: {origin: new URL(route.request().url()).origin, token: 'mock-session'}});
     if (path === '/api/profile') return route.fulfill({json: profile});
     if (path === '/api/status') return route.fulfill({json: {mode, serial: 'X6TEST000001'}});
     if (path === '/api/enter-adfu') {mode = 'adfu'; return route.fulfill({json: {mode}});}
@@ -76,6 +77,8 @@ async function pageFixture() {
   await page.addInitScript(() => {
     window.__calls = [];
     window.__saved = [];
+    // Exercise the second-click path after an ADFU switch outlasts activation.
+    Object.defineProperty(navigator, 'userActivation', {value: {isActive: false}});
     Object.defineProperty(navigator, 'usb', {value: {
       getDevices: async () => [], requestDevice: async () => ({vendorId: 0x10d6, productId: 0x10d6}),
       addEventListener: () => {},
@@ -116,13 +119,22 @@ test('initial page is quiet, responsive and has no automatic hardware discovery'
   await context.close();
 });
 
-test('public Pages subpath opens without a helper and never sends a device request', async () => {
+for (const helperAvailable of [false, true]) test(`direct Pages click with helper ${helperAvailable ? 'running opens USB chooser' : 'absent explains pairing failure'}`, async () => {
   const context = await browser.newContext({viewport: {width: 1280, height: 1100}});
-  const page = await context.newPage(), unexpected = [], errors = [];
+  const page = await context.newPage(), unexpected = [], errors = [], helperRequests = [];
   const base = 'https://netfreak25.github.io/DDMY-X6-Flasher/';
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/*', async route => {
     const url = route.request().url();
+    if (new URL(url).origin === 'http://127.0.0.1:8765') {
+      const path = new URL(url).pathname;
+      helperRequests.push(path);
+      if (!helperAvailable) return route.abort('connectionrefused');
+      if (path === '/api/pair') return route.fulfill({json: {origin: 'http://127.0.0.1:8765', token: 'direct-session'}});
+      if (path === '/api/status') return route.fulfill({json: {mode: 'adfu'}});
+      unexpected.push(url);
+      return route.abort();
+    }
     if (!url.startsWith(base)) {unexpected.push(url); return route.abort();}
     const relative = url.slice(base.length) || 'index.html';
     if (relative.includes('..') || relative.includes('/api/')) {unexpected.push(url); return route.abort();}
@@ -130,12 +142,36 @@ test('public Pages subpath opens without a helper and never sends a device reque
       relative.endsWith('.json') ? 'application/json' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html';
     return route.fulfill({contentType, body: await readFile(relative)});
   });
+  await page.addInitScript(() => {
+    window.__usbCalls = [];
+    Object.defineProperty(navigator, 'usb', {value: {
+      getDevices: async () => {window.__usbCalls.push({method: 'getDevices'}); return [];},
+      requestDevice: async options => {
+        window.__usbCalls.push({method: 'requestDevice', active: navigator.userActivation.isActive, options});
+        throw new Error('Test chooser opened; no physical device accessed.');
+      },
+      addEventListener: () => {},
+    }});
+  });
   await page.goto(base);
   await page.waitForFunction(() => !document.querySelector('#connect').disabled);
   assert.equal(await page.locator('#setup-note').isVisible(), true);
+  assert.deepEqual(helperRequests, []);
+  assert.deepEqual(await page.evaluate(() => window.__usbCalls), []);
   await page.locator('#connect').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vorgang gestoppt');
-  assert.match(await page.locator('#activity-message').textContent(), /Windows-Helfer/);
+  if (helperAvailable) {
+    assert.deepEqual(helperRequests, ['/api/pair', '/api/status']);
+    assert.deepEqual(await page.evaluate(() => window.__usbCalls), [
+      {method: 'getDevices'},
+      {method: 'requestDevice', active: true, options: {filters: [{vendorId: 0x10d6, productId: 0x10d6}]}},
+    ]);
+    assert.equal(await page.locator('#setup-note').isVisible(), false);
+  } else {
+    assert.deepEqual(helperRequests, ['/api/pair']);
+    assert.deepEqual(await page.evaluate(() => window.__usbCalls), []);
+    assert.match(await page.locator('#activity-message').textContent(), /Windows-App konnte nicht gekoppelt/);
+  }
   assert.deepEqual(unexpected, []);
   assert.deepEqual(errors, []);
   await page.screenshot({path: 'private_dumps/web-tests/pages.png', fullPage: true});
@@ -156,6 +192,65 @@ test('connect, valid file selection, comparison and disabled concurrent actions'
   assert.match(await page.locator('#activity-message').textContent(), /1 Bytes/);
   assert.deepEqual(errors, []);
   await context.close();
+});
+
+test('Chrome pairs an HTTPS Pages tab with the real loopback HTTP endpoint and CORS', async () => {
+  // Separate ephemeral helper, empty runtime, and hard blocks on all device APIs.
+  const helper = spawn('python', ['-u', '-c', `
+import sys, tempfile
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0, 'tools')
+import x6_web as web
+import x6_toolkit as toolkit
+with tempfile.TemporaryDirectory() as runtime, \\
+     patch.object(toolkit, 'probe_device', side_effect=AssertionError('No device access')), \\
+     patch.object(toolkit, 'enter_adfu', side_effect=AssertionError('No device access')):
+    with web.WebServer(0, toolkit.Profile.load(), Path(runtime), online=True) as server:
+        print(server.origin, flush=True)
+        server.serve_forever()
+`], {stdio: ['ignore', 'pipe', 'pipe']});
+  const context = await browser.newContext();
+  try {
+    const helperOrigin = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Isolated helper did not start')), 10000);
+      helper.stdout.once('data', chunk => {clearTimeout(timer); resolve(chunk.toString().trim());});
+      helper.once('error', error => {clearTimeout(timer); reject(error);});
+    });
+    const base = 'https://netfreak25.github.io/DDMY-X6-Flasher/';
+    const page = await context.newPage(), unexpected = [], diagnostics = [];
+    // Current Chrome separates loopback-network from local-network. The
+    // installed Playwright version still maps only the obsolete combined name.
+    const cdp = await context.newCDPSession(page);
+    const {targetInfo} = await cdp.send('Target.getTargetInfo');
+    await cdp.send('Browser.setPermission', {permission: {name: 'loopback-network'}, setting: 'granted',
+      origin: new URL(base).origin, browserContextId: targetInfo.browserContextId});
+    page.on('console', message => {if (message.type() === 'error') diagnostics.push(message.text());});
+    page.on('requestfailed', request => diagnostics.push(`${request.url()}: ${request.failure()?.errorText}`));
+    await page.route('**/*', async route => {
+      const url = route.request().url();
+      if (url === `${helperOrigin}/api/pair`) return route.continue();
+      if (url === `${base}lib/bridge.js`) return route.fulfill({contentType: 'text/javascript', body: await readFile('lib/bridge.js')});
+      if (url === base) return route.fulfill({contentType: 'text/html', body: `<button id="pair">Verbinden</button><script type="module">
+        import {pairHelper} from './lib/bridge.js';
+        document.querySelector('#pair').onclick = async () => {
+          try { const session = await pairHelper(${JSON.stringify(helperOrigin)}, 10000);
+            window.pairResult = {origin: session.origin, tokenLength: session.token.length};
+          } catch (error) { window.pairResult = {error: error.message}; }
+        };
+      </script>`});
+      unexpected.push(url);
+      return route.abort();
+    });
+    await page.goto(base);
+    await page.locator('#pair').click();
+    await page.waitForFunction(() => window.pairResult);
+    assert.deepEqual(await page.evaluate(() => window.pairResult), {origin: helperOrigin, tokenLength: 43}, diagnostics.join('\n'));
+    assert.deepEqual(unexpected, []);
+  } finally {
+    await context.close();
+    if (helper.exitCode === null) {const stopped = once(helper, 'exit'); helper.kill(); await stopped;}
+  }
 });
 
 test('flash uses confirmation, saves before writing and shows verified restart', async () => {
