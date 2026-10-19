@@ -192,6 +192,10 @@ class ArtworkWindow:
         for button in (self.replace_button, self.edit_button, self.reset_button):
             button.pack(side="left", padx=3)
         ttk.Label(detail, text="240 × 320 · RGB565\nPNG, JPEG, WebP · bis 25 MiB / 40 MP\n14 feste Plätze · keine zusätzlichen Bilder", wraplength=480).pack(anchor="w")
+        self.backup_checkbox = ttk.Checkbutton(panel, text="Vor dem Flashen sichern",
+                                              variable=host.backup_before_flash)
+        self.backup_checkbox.pack(anchor="w", pady=(0, 6))
+        self.controls.append(self.backup_checkbox)
         bottom = ttk.Frame(panel)
         bottom.pack(fill="x")
         self.save_button = self.button(bottom, "Geänderte BINs speichern", self.save_bins)

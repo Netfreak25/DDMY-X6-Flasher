@@ -33,7 +33,7 @@
     <section class="actions-grid" aria-label="Aktionen">
       <article class="action-card"><span class="card-icon" aria-hidden="true">↧</span><h2>Sicherung erstellen</h2><p>Bootdatensätze und Firmware gemeinsam sichern. Musik und SD-Karte bleiben unberührt.</p><button id="dump" class="secondary" data-control disabled>Sicherung erstellen <span aria-hidden="true">→</span></button><small>Full-Dump · ungefähr 62 MB</small></article>
       <article class="action-card"><span class="card-icon" aria-hidden="true">↶</span><h2>Sicherung wiederherstellen</h2><p>Eine vollständige Sicherung laden und Bootdatensätze samt Firmware zurückspielen.</p><div class="backup-picker"><label class="text-button">ZIP auswählen<input id="backup-file" type="file" accept=".zip" data-control></label><span>oder</span><label class="text-button">Ordner öffnen<input id="backup-folder" type="file" webkitdirectory multiple data-control></label></div><button id="restore" class="secondary" data-control disabled>Wiederherstellen <span aria-hidden="true">→</span></button><small id="backup-info">Noch keine Sicherung ausgewählt</small></article>
-      <article class="action-card"><span class="card-icon" aria-hidden="true">↑</span><h2>Firmware flashen</h2><p>Erkannte Bereiche einzeln oder zusammen aktualisieren. Vorher sichern, anschließend vollständig zurücklesen und prüfen.</p><button id="flash" class="primary" data-control disabled>Auswahl flashen <span aria-hidden="true">→</span></button><small>Automatische Erkennung · MBREC, BREC und LFI</small></article>
+      <article class="action-card"><span class="card-icon" aria-hidden="true">↑</span><h2>Firmware flashen</h2><p>Erkannte Bereiche einzeln oder zusammen aktualisieren. Anschließend vollständig zurücklesen und prüfen.</p><label class="coupling"><input id="flash-backup" type="checkbox" data-control checked> Vor dem Flashen sichern</label><button id="flash" class="primary" data-control disabled>Auswahl flashen <span aria-hidden="true">→</span></button><small>Automatische Erkennung · MBREC, BREC und LFI</small></article>
       <article class="action-card"><span class="card-icon" aria-hidden="true">⇄</span><h2>Mit Gerät vergleichen</h2><p>Die ausgewählte Firmware Byte für Byte mit dem Inhalt deines Players vergleichen.</p><button id="verify" class="secondary" data-control disabled>Vergleichen <span aria-hidden="true">→</span></button><small>Kein Schreiben in den Flash</small></article>
     </section>
 
@@ -61,6 +61,7 @@
             <p class="artwork-hint">240 × 320 · RGB565<br>Statisches PNG, JPEG oder WebP · bis 25 MiB / 40 MP<br>14 feste Plätze. Keine Bilder hinzufügen oder löschen.</p>
           </div>
         </div>
+        <label class="coupling"><input id="artwork-backup" type="checkbox" data-control checked> Vor dem Flashen sichern</label>
         <div class="artwork-toolbar artwork-export"><button id="artwork-save" class="secondary" data-art-control>Geänderte BINs speichern</button><button id="artwork-package" class="secondary" data-art-control>Firmwarepaket speichern</button><button id="artwork-flash" class="primary" data-art-control>Änderungen flashen</button></div>
         <p id="artwork-activity" class="artwork-hint" aria-live="polite"></p>
       </div>

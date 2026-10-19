@@ -1,5 +1,30 @@
 # Änderungen
 
+## 0.3.0-beta.7 – lokal, unveröffentlicht
+
+- Checkbox **Vor dem Flashen sichern** in Windows/Web und im Bildeditor.
+  Standardmäßig aktiviert; abgewählt entfallen vollständiger Vorabdump und
+  Speicherdialog. Geräteprüfungen und vollständiges Rücklesen bleiben aktiv.
+- Windows-Warteschritte zeigen einen statischen Hinweis statt einer laufenden
+  Fortschrittsanimation. Bestätigte Schreibwerte bleiben als Prozent sichtbar.
+- Regressionen für beide Optionen, alle sieben Bereichskombinationen, Editor,
+  Headerfehler, ausbleibende Bestätigungen und ruhige Wartephasen.
+- Nur lokal gebaut; wegen des laufenden Nutzer-Flashs nicht installiert.
+
+### Integrationsfehler der vorherigen beta.6
+
+Die Sicherungsoption und ruhige Statusanzeige waren bereits im separaten
+Branch `codex/optional-flash-backup`, Commit `72f7ef7`, umgesetzt. Dieser Branch
+und der spätere Screensaver-/Padding-Stand `9c89fd2` hatten beide die Nummer
+beta.6. Das später installierte Paket wurde aus `main` gebaut, ohne den
+Feature-Branch zu integrieren. Der ältere Feature-Build war wegen eines
+laufenden Nutzer-Flashs nur vorbereitet und nicht installiert worden.
+
+beta.7 führt beide Entwicklungsstände zusammen. Der EXE-Selbsttest prüft
+zusätzlich die Sicherungs-Checkbox und den eigenen flachen Fortschrittsstil
+zusammen mit dem Screensaver-Profil. Der vollständige Branchabgleich ergab
+keine weiteren unabhängigen Funktionen in dem ausgelassenen Commit.
+
 ## 0.3.0-beta.6 – lokal, unveröffentlicht
 
 - Optionales Nachrüsten und Aktualisieren des Screensavers auf v7 in Windows

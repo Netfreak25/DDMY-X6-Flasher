@@ -107,6 +107,7 @@ class HelperWindow:
 
         self.firmware = tk.StringVar()
         self.backup = tk.StringVar()
+        self.backup_before_flash = tk.BooleanVar(value=True)
         firmware = self.section(panel, "Firmware · automatische Bereichserkennung")
         self.file_row(firmware, self.firmware, self.choose_firmware)
         row = tk.Frame(firmware, bg="white")
@@ -117,8 +118,11 @@ class HelperWindow:
         self.compare_button.pack(side="left")
         self.artwork_button = self.button(row, "Bilder bearbeiten", self.open_artwork)
         self.artwork_button.pack(side="left", padx=(8, 0))
-        self.label(firmware, "MBREC, BREC, LFI · einzeln, mehrere BINs oder ein vollständiges ZIP-Paket.",
-                   background="white").pack(anchor="w", pady=(5, 0))
+        self.backup_checkbox = tk.Checkbutton(firmware, text="Vor dem Flashen sichern",
+                                             variable=self.backup_before_flash, bg="white", fg=INK,
+                                             activebackground="white", font=("Segoe UI", 9))
+        self.backup_checkbox.pack(anchor="w")
+        self.controls.append(self.backup_checkbox)
 
         backup = self.section(panel, "Vollständige Sicherung")
         self.file_row(backup, self.backup, self.choose_backup, self.choose_folder)
@@ -144,7 +148,16 @@ class HelperWindow:
                                       font=("Segoe UI", 11), wraplength=680, justify="left", anchor="w")
         self.activity_label.pack(fill="x")
         panel.bind("<Configure>", lambda event: self.activity_label.configure(wraplength=max(300, event.width - 52)))
-        self.progress = ttk.Progressbar(panel, mode="indeterminate")
+        # Keep the dedicated flat elements from the optional-backup branch:
+        # system progress themes can pulse even without a marquee timer.
+        for element in ("trough", "pbar"):
+            name = f"X6.Horizontal.Progressbar.{element}"
+            if name not in style.element_names():
+                style.element_create(name, "from", "clam", f"Horizontal.Progressbar.{element}")
+        style.layout("X6.Horizontal.TProgressbar", [("X6.Horizontal.Progressbar.trough", {
+            "sticky": "nswe", "children": [("X6.Horizontal.Progressbar.pbar", {"side": "left", "sticky": "ns"})]})])
+        style.configure("X6.Horizontal.TProgressbar", background=TEAL, troughcolor="#e3f0eb", borderwidth=0)
+        self.progress = ttk.Progressbar(panel, mode="determinate", style="X6.Horizontal.TProgressbar")
         self.progress.pack(fill="x", pady=(10, 4))
         self.progress_text = tk.StringVar()
         self.progress_label = tk.Label(panel, textvariable=self.progress_text, bg=BACKGROUND, fg=TEAL, font=("Segoe UI", 9))
@@ -273,18 +286,24 @@ class HelperWindow:
             description += "Geänderte Bilder: " + ", ".join(changed_labels) + "\n"
         if "brec" in selection.areas:
             description += "BREC wird in beiden Bootkopien aktualisiert.\n"
-        description += "Zuerst Rücksicherung speichern, dann diese Bereiche schreiben und vollständig zurücklesen."
+        create_backup = self.backup_before_flash.get()
+        description += ("Zuerst Rücksicherung speichern, dann diese Bereiche schreiben und vollständig zurücklesen."
+                        if create_backup else "Ohne neue Rücksicherung schreiben und anschließend vollständig zurücklesen.")
         if not messagebox.askokcancel("Auswahl flashen", description, parent=self.root):
             return
-        extension = ".x6backup.zip" if selection.has_boot else ".bin"
-        destination = filedialog.asksaveasfilename(parent=self.root, title="Rücksicherung vor dem Flashen speichern",
-                                                  defaultextension=extension, initialfile="x6-vor-flash" + extension,
-                                                  filetypes=[("X6-Sicherung", "*.zip" if selection.has_boot else "*.bin")])
-        if destination:
+        destination = None
+        if create_backup:
+            extension = ".x6backup.zip" if selection.has_boot else ".bin"
+            name = filedialog.asksaveasfilename(parent=self.root, title="Rücksicherung vor dem Flashen speichern",
+                                               defaultextension=extension, initialfile="x6-vor-flash" + extension,
+                                               filetypes=[("X6-Sicherung", "*.zip" if selection.has_boot else "*.bin")])
+            if not name:
+                return
+            destination = Path(name)
             if changed_labels and Path(destination).exists():
                 messagebox.showerror("Neuen Namen wählen", "Die Rücksicherung benötigt einen neuen Dateinamen. Vorhandene Dateien bleiben erhalten.", parent=self.root)
                 return
-            self.start(f"{selection.label} flashen", lambda: self.operations.flash_selection(selection, Path(destination)))
+        self.start(f"{selection.label} flashen", lambda: self.operations.flash_selection(selection, destination))
 
     def restore(self):
         if not self.backup.get():
@@ -324,8 +343,8 @@ class HelperWindow:
         self.device_job, self.completion, self.job_result = device, on_result, None
         self.report = [{"event": "start", "action": title}]
         self.activity.set(title)
-        self.progress.configure(mode="indeterminate")
-        self.progress.start()
+        self.progress.configure(mode="determinate", value=0)
+        self.progress_text.set("Bitte warten …")
         self.update_controls()
 
         def work():
@@ -359,11 +378,10 @@ class HelperWindow:
             self.report.append(event)
             kind = event["event"]
             if kind == "phase":
-                self.activity.set(event["label"])
-                self.progress.stop()
-                self.progress.configure(mode="indeterminate", value=0)
-                self.progress.start()
-                self.progress_text.set("")
+                if self.activity.get() != event["label"]:
+                    self.activity.set(event["label"])
+                    self.progress.configure(mode="determinate", value=0)
+                    self.progress_text.set("Bitte warten …")
             elif kind == "backend_output":
                 match = re.search(r"write_flash: (\d+)/(\d+) sectors", event["line"])
                 if match:
@@ -491,6 +509,8 @@ def self_test(window: HelperWindow, profile: toolkit.Profile, runtime: Path) -> 
     editor.close()
     return {"ok": all(icons) and fits, "window_icons": icons, "http_pairing": http_checks,
             "controls": [button.cget("text") for button in window.controls], "buttons_fit": fits,
+            "backup_default": window.backup_before_flash.get(),
+            "wait_progress_style": window.progress.cget("style"),
             "poweroff_payload_size": len(payload), "backend_hashes_checked": True,
             "device_access": False, "browser_started": False,
             "screensaver_revision": screen_profile["revision"],

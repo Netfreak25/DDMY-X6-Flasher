@@ -108,6 +108,7 @@ async function pageFixture(bootMapping = profile.boot_write_mapping_verified, as
       async bootstrap(){}
       async payload(name){return new Uint8Array(await (await fetch('/test-payload/'+name)).arrayBuffer());}
       async flashDriver(){window.__calls.push('driver');}
+      async readLfiHeader(){window.__calls.push('header');return (await file('lfi.bin')).subarray(0,${testProfile.sector_size});}
       async readLfi(progress){window.__calls.push('read');await new Promise(r=>setTimeout(r,150));let data=await file('lfi.bin');progress?.(data.length,data.length);if(window.__mismatch)data[0]^=1;return data;}
       async readBoot(index){window.__calls.push('boot'+index);if(window.__badBoot&&index===0)throw Error('bad brec checksum');return index===0?{'mbrec.bin':await file('mbrec.bin'),'brec0.bin':await file('brec0.bin')}:{'mbrec_copy.bin':await file('mbrec_copy.bin'),'brec1.bin':await file('brec1.bin')};}
       async writeArea(name,data){window.__calls.push(name);if(window.__writeFailure)throw Error('USB-Befehl nicht bestätigt.');window.__deviceFiles||={};for(const key of ({lfi:['lfi.bin'],mbrec:['mbrec.bin','mbrec_copy.bin'],brec:['brec0.bin','brec1.bin']}[name]||[]))window.__deviceFiles[key]=data.slice();}
@@ -327,12 +328,33 @@ with tempfile.TemporaryDirectory() as runtime, \\
 test('flash uses confirmation, saves before writing and shows verified restart', async () => {
   const {page, context, errors} = await pageFixture();
   await connect(page); await selectFirmware(page);
+  assert.equal(await page.locator('#flash-backup').isChecked(), true);
   await page.evaluate(() => {window.__calls = [];});
   await page.locator('#flash').click();
   await page.locator('#confirm-go').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'LFI geschrieben und verifiziert.');
   assert.deepEqual(await page.evaluate(() => window.__calls), ['read', 'save', 'driver', 'lfi', 'final', 'read', 'reset']);
   assert.equal(await page.locator('#device-badge').textContent(), 'Normal gestartet');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('unchecked backup skips save picker and full pre-read; verification remains mandatory', async () => {
+  const {page, context, errors} = await pageFixture();
+  await connect(page); await selectFirmware(page);
+  await page.locator('#flash-backup').uncheck();
+  assert.equal(await page.locator('#artwork-backup').isChecked(), false);
+  await page.evaluate(() => {
+    window.__calls = [];
+    window.showSaveFilePicker = async () => {throw Error('Backup picker must not open');};
+  });
+  await page.locator('#flash').click();
+  await page.locator('#confirmation').waitFor({state: 'visible'});
+  assert.match(await page.locator('#confirm-description').textContent(), /Sicherung.*übersprungen/);
+  await page.locator('#confirm-go').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'LFI geschrieben und verifiziert.');
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['header', 'driver', 'lfi', 'final', 'read', 'reset']);
+  assert.deepEqual(await page.evaluate(() => window.__saved), []);
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -597,9 +619,14 @@ test('LFI-only editing marks early startup missing and exports only LFI', async 
   await context.close();
 });
 
-test('editor flashes exactly BREC plus LFI, confirms images and reads both boot copies', async () => {
+for (const backup of [true, false]) test(`editor flashes exactly BREC plus LFI with backup ${backup}, confirms images and reads both boot copies`, async () => {
   const {page, context, errors} = await pageFixture(true, artworkFiles, artworkData.profile);
   await openArtwork(page); await replaceArtwork(page); await connect(page);
+  if (!backup) {
+    await page.locator('#artwork-backup').uncheck();
+    assert.equal(await page.locator('#flash-backup').isChecked(), false);
+    await page.evaluate(() => {window.showSaveFilePicker = async () => {throw Error('Backup picker must not open');};});
+  }
   await page.evaluate(() => {window.__calls = [];});
   await page.locator('#artwork-flash').click();
   await page.locator('#confirmation').waitFor({state: 'visible'});
@@ -608,7 +635,8 @@ test('editor flashes exactly BREC plus LFI, confirms images and reads both boot 
   await page.locator('#confirm-go').click();
   await page.waitForFunction(() => ['BREC + LFI geschrieben und verifiziert.', 'Vorgang gestoppt'].includes(document.querySelector('#activity-heading').textContent));
   assert.equal(await page.locator('#activity-heading').textContent(), 'BREC + LFI geschrieben und verifiziert.', await page.locator('#activity-message').textContent());
-  assert.deepEqual(await page.evaluate(() => window.__calls), ['read', 'boot0', 'boot1', 'save', 'driver', 'brec', 'lfi', 'final', 'read', 'boot0', 'boot1', 'reset']);
+  const before = backup ? ['read', 'boot0', 'boot1', 'save'] : ['header', 'boot0', 'boot1'];
+  assert.deepEqual(await page.evaluate(() => window.__calls), [...before, 'driver', 'brec', 'lfi', 'final', 'read', 'boot0', 'boot1', 'reset']);
   assert.deepEqual(errors, []);
   await context.close();
 });

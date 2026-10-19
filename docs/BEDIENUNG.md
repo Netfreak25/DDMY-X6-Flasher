@@ -36,12 +36,13 @@ Zusätzlich bleiben die gelesenen Dateien im privaten Arbeitsverzeichnis erhalte
 
 1. Eine oder mehrere BIN-Dateien auswählen (Mehrfachauswahl mit Strg), oder ein vollständiges `.x6backup.zip`.
 2. Die Anzeige nennt automatisch **MBREC**, **BREC**, **LFI** oder ihre Kombination. Erkannt wird der Inhalt, unabhängig vom Dateinamen.
-3. **Auswahl flashen** wählen, die angezeigten Bereiche bestätigen und den Speicherort der Rücksicherung wählen.
-4. Sichern → Schreiben → vollständiges Rücklesen → Neustart abwarten.
+3. **Vor dem Flashen sichern** nach Wunsch aktiviert lassen oder abwählen. Die Einstellung gilt auch im Bildeditor.
+4. **Auswahl flashen** wählen und die angezeigten Bereiche bestätigen. Nur bei aktivierter Sicherung folgt der Speicherdialog.
+5. Gegebenenfalls sichern → Schreiben → vollständiges Rücklesen → Neustart abwarten.
 
-Die Sicherung wird geschlossen, auf Datenträger geschrieben und vollständig
+Eine aktivierte Sicherung wird geschlossen, auf Datenträger geschrieben und vollständig
 verglichen, bevor der erste Flash-Schreibbefehl startet. Die ausgewählte
-Firmwaredatei bleibt unverändert. LFI-Header, Größe und alle 148 Dateiprüfsummen
+Firmwaredatei bleibt unverändert. LFI-Header, Größe und alle vorhandenen Dateiprüfsummen
 werden geprüft. Bei BREC werden NAND-Zuordnung, Größe sowie Code- und Headerprüfsumme
 geprüft; bei MBREC Marker, Größe und NAND-Geometrie.
 
@@ -58,10 +59,15 @@ werden zusammengefasst; widersprüchliche Kopien werden abgewiesen. Bereits für
 die Übertragung angepasste BREC-Dateien werden abgelehnt: die App braucht den
 fertigen BREC aus dem Dump und bereitet selbst eine getrennte Übertragungskopie vor.
 
-Bei LFI allein wird das bisherige LFI als BIN gespeichert. Sobald MBREC oder BREC
-gewählt ist, wird vorher eine vollständige, geprüfte ZIP-Sicherung erstellt.
-Ist das nicht möglich, stoppt dieser Weg vor dem Schreiben; für eine Reparatur
-aus vorhandener Sicherung dient **Sicherung wiederherstellen**.
+Bei aktivierter Sicherung wird für LFI allein das bisherige LFI als BIN gespeichert;
+bei MBREC oder BREC wird eine vollständige, geprüfte ZIP-Sicherung erstellt.
+Ohne Sicherung entfällt der vollständige Vorabdump. Vor einem LFI-Schreiben wird
+nur der 512-Byte-Geräteheader verglichen. Bei Bootänderungen bleiben die kleinen
+Leseprüfungen für Geometrie und unveränderte Bootkopien erforderlich.
+Das vollständige Rücklesen nach dem Schreiben bleibt in beiden Fällen aktiv.
+
+Die Windows-App zeigt bei Warteschritten einen statischen Hinweis. Prozentwerte
+erscheinen nur bei bestätigtem Schreibfortschritt; keine Endlosanimation beim Neustart.
 
 MBREC-Bootpositionen und NAND-Geometrie müssen zum angeschlossenen X6 passen.
 Nach Boot-Schreibvorgängen werden beide BREC-Kopien und MBREC zurückgelesen:

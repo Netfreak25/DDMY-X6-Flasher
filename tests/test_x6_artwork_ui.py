@@ -52,6 +52,18 @@ class EditorWindowTests(unittest.TestCase):
         self.assertEqual(str(self.editor.tiles["boot-startup"].cget("state")), "disabled")
         self.assertIn("BREC nicht geladen", self.editor.info.get())
 
+    def test_backup_checkbox_is_shared_with_main_window_and_disabled_while_busy(self):
+        self.assertTrue(self.host.backup_before_flash.get())
+        self.editor.backup_checkbox.invoke()
+        self.assertFalse(self.host.backup_before_flash.get())
+        self.host.backup_checkbox.invoke()
+        self.assertTrue(self.editor.backup_checkbox.instate(["selected"]))
+        self.host.busy = True
+        self.host.update_controls()
+        self.assertEqual(self.host.backup_checkbox.cget("state"), "disabled")
+        self.assertTrue(self.editor.backup_checkbox.instate(["disabled"]))
+        self.host.busy = False
+
     def test_screensaver_upgrade_is_optional_preserves_edits_and_disables_second_patch(self):
         """A UI action alone activates code changes; selecting wallpapers only explains it."""
         _components, _device, config, versions = patch_fixtures.fixture()

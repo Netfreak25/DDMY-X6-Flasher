@@ -134,7 +134,11 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.3.0-beta.6 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
+**v0.3.0-beta.7 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
+Die Sicherung vor dem Flashen ist in Windows und Web per Checkbox optional,
+auch im Bildeditor. Ohne Sicherung entfallen vollständiger Vorabdump und
+Speicherdialog; Geräteheader, Bootgeometrie und vollständiges Rücklesen bleiben
+geprüft. Die Windows-Statusanzeige wartet ohne laufende Animation.
 Windows und Web bieten das Nachrüsten bzw. Aktualisieren des Bildschirmschoners
 auf v7 ausdrücklich als Option an. Bereits aktueller Code wird unabhängig von
 den Hintergrundpixeln erkannt; Hello-X6-Varianten behalten ihren Launcher.

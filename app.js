@@ -283,26 +283,30 @@ $('verify').addEventListener('click', () => void run('Mit Gerät vergleichen', a
 }));
 
 $('flash').addEventListener('click', () => void run('Firmware flashen', () => flashSelected(state.firmware)));
+for (const id of ['flash-backup', 'artwork-backup']) $(id).addEventListener('change', event => {
+  for (const target of ['flash-backup', 'artwork-backup']) $(target).checked = event.target.checked;
+});
 
 async function flashSelected(selected, changedLabels = []) {
-  const label = selectionLabel(selected), boot = hasBoot(selected);
+  const label = selectionLabel(selected), boot = hasBoot(selected), backup = $('flash-backup').checked;
   const description = (changedLabels.length ? `Geänderte Bilder: ${changedLabels.join(', ')}. ` : '') +
     `Erkannte Bereiche: ${label}. ${selected.components.brec ? 'BREC wird in beiden Bootkopien aktualisiert. ' : ''}` +
-    'Zuerst wird die Rücksicherung gespeichert. Anschließend werden diese Bereiche geschrieben und vollständig zurückgelesen.';
+    (backup ? 'Zuerst wird die Rücksicherung gespeichert. ' : 'Die Sicherung vor dem Flashen wird übersprungen. ') +
+    'Anschließend werden diese Bereiche geschrieben und vollständig zurückgelesen.';
   if (!await confirmAction(`${label} flashen?`, description)) {
     result('Abgebrochen', 'Es wurde nichts geschrieben.'); return;
   }
   const extension = boot ? '.zip' : '.bin', name = `x6-vor-flash-${stamp()}${boot ? '.x6backup.zip' : '.bin'}`;
-  const handle = await savePicker(name, extension);
-  if (changedLabels.length && (await handle.getFile()).size) throw new Error('Die Rücksicherung benötigt einen neuen Dateinamen. Vorhandene Dateien bleiben erhalten.');
-  const outcome = await operations().flashSelection(selected, async backup => {
-    const data = boot ? packBackup(backup.files, backup.manifest) : backup;
+  const handle = backup ? await savePicker(name, extension) : null;
+  if (handle && changedLabels.length && (await handle.getFile()).size) throw new Error('Die Rücksicherung benötigt einen neuen Dateinamen. Vorhandene Dateien bleiben erhalten.');
+  const outcome = await operations().flashSelection(selected, async before => {
+    const data = boot ? packBackup(before.files, before.manifest) : before;
     // Keep it recoverable in this session if a filesystem error interrupts saving.
     state.pendingBackup = {data, name, extension};
     await saveToHandle(handle, data);
     state.pendingBackup = null;
     return true;
-  });
+  }, {backup});
   result(`${label} geschrieben und verifiziert.`, outcome.normalMode ? 'Der Player ist wieder normal gestartet.' :
     'Der vollständige Rücklesevergleich war erfolgreich. Der normale Neustart ist noch nicht bestätigt.', outcome.normalMode ? 'success' : 'warning');
 }

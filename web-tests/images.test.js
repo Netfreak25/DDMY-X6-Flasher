@@ -24,6 +24,7 @@ function fixture() {
   const calls = [], current = {...files};
   const driver = {payload, flashDriver: async () => calls.push('driver'),
     readLfi: async () => {calls.push('read-lfi'); return current['lfi.bin'];},
+    readLfiHeader: async () => {calls.push('read-header'); return current['lfi.bin'].subarray(0, profile.sector_size);},
     readBoot: async index => {
       calls.push(`read-boot${index}`);
       const names = index ? ['mbrec_copy.bin', 'brec1.bin'] : ['mbrec.bin', 'brec0.bin'];
@@ -77,6 +78,48 @@ test('identical duplicate copies and complete ZIPs merge; conflicting copies and
   }
   const prepared = await prepareBrecTransfer(files['brec0.bin'], await payload('fwsc.bin'), profile);
   assert.throws(() => identify(prepared, profile), /Prüfsumme/);
+});
+
+test('optional backup skips full pre-read and save for all seven selections while retaining verification', async () => {
+  for (let mask = 1; mask < 8; mask++) {
+    const f = fixture(), areas = Object.keys(AREA_FILES).filter((_, index) => mask & (1 << index)), events = [];
+    f.operations.log = event => events.push(event);
+    const selected = await selectImages(areas.map(area => source(inputs[area])), profile);
+    const result = await f.operations.flashSelection(selected, () => assert.fail('Backup disabled'), {backup: false});
+    assert.equal(result.normalMode, true);
+    const writeIndex = f.calls.findIndex(call => call.startsWith('write-'));
+    assert.ok(!f.calls.slice(0, writeIndex).includes('read-lfi'));
+    assert.equal(f.calls.filter(call => call === 'read-lfi').length, Number(areas.includes('lfi')));
+    assert.equal(f.calls.filter(call => call === 'read-header').length, Number(areas.includes('lfi')));
+    assert.equal(events.filter(event => event.event === 'backup_skipped').length, 1);
+    assert.equal(f.calls.at(-1), 'reset');
+  }
+});
+
+test('without backup, header mismatch or uncertain write still stops without retry or restart', async () => {
+  const selected = await selectImages([source(inputs.lfi)], profile);
+  let f = fixture();
+  f.driver.readLfiHeader = async () => {const header = files['lfi.bin'].slice(0, profile.sector_size); header[40] ^= 1; return header;};
+  await assert.rejects(f.operations.flashSelection(selected, null, {backup: false}), /Gerätespezifischer/);
+  assert.deepEqual(f.calls, []);
+  f = fixture();
+  f.driver.writeArea = async area => {f.calls.push(`write-${area}`); throw new Error('unconfirmed');};
+  await assert.rejects(f.operations.flashSelection(selected, null, {backup: false}), /unconfirmed/);
+  assert.deepEqual(f.calls, ['read-header', 'driver', 'write-lfi']);
+});
+
+test('without backup, all boot records and a complete LFI header are checked before writing', async () => {
+  const selected = await selectImages(Object.values(inputs).map(data => source(data)), profile);
+  for (const name of ['mbrec.bin', 'mbrec_copy.bin', 'brec0.bin', 'brec1.bin']) {
+    const f = fixture();
+    f.current[name] = f.current[name].slice(0, -1);
+    await assert.rejects(f.operations.flashSelection(selected, null, {backup: false}), /Falsche Größe/);
+    assert.ok(!f.calls.some(call => call.startsWith('write-')));
+  }
+  const f = fixture();
+  f.driver.readLfiHeader = async () => files['lfi.bin'].slice(0, profile.sector_size - 1);
+  await assert.rejects(f.operations.flashSelection(selected, null, {backup: false}), /Header.*nicht vollständig/);
+  assert.deepEqual(f.calls, []);
 });
 
 test('uncertain MBREC, BREC or LFI acknowledgement stops without finalization, retry or reset', async () => {

@@ -101,7 +101,9 @@ class NativeTests(unittest.TestCase):
             data = bytes(6) + b"NAFWSC"
             return f"result ({len(data)}):\n{data.hex(' ')}\n"
         elif "read_lfi" in args:
-            Path(args[-1]).write_bytes(self.device_image)
+            start = args.index("read_lfi") + 1
+            offset, length = int(args[start], 0), int(args[start + 1], 0)
+            Path(args[-1]).write_bytes(self.device_image[offset:offset + length])
         elif args[0] == "read_brec":
             index = int(args[3])
             Path(args[2]).write_bytes(self.files["mbrec.bin" if index == 0 else "mbrec_copy.bin"])
@@ -208,7 +210,7 @@ class NativeTests(unittest.TestCase):
     def test_component_writes_stop_without_retry_on_each_uncertain_ack(self):
         paths = self.changed_candidates()
         original = self.files.copy()
-        for failed in ("mbrec", "brec", "lfi"):
+        for failed, save_backup in ((area, save) for area in ("mbrec", "brec", "lfi") for save in (True, False)):
             self.files, self.device_image, self.calls = original.copy(), self.image, []
             self.ops.inspect(tuple(paths.values()))
 
@@ -217,13 +219,13 @@ class NativeTests(unittest.TestCase):
                 return "" if name == f"write_{failed}" else result
 
             with self.simulated(run), self.assertRaisesRegex(toolkit.ToolkitError, "not confirmed"):
-                self.ops.flash_selection(self.ops.selection, self.base / f"before-{failed}.zip")
+                self.ops.flash_selection(self.ops.selection, self.base / f"before-{failed}.zip" if save_backup else None)
             self.assertEqual(self.calls[-1], f"write_{failed}")
             self.assertEqual(self.calls.count(f"write_{failed}"), 1)
 
     def test_partial_boot_readback_checks_unselected_boot_and_second_brec_copy(self):
         paths = self.changed_candidates()
-        for corrupt in ("mbrec_copy.bin", "brec1.bin"):
+        for corrupt, save_backup in ((name, save) for name in ("mbrec_copy.bin", "brec1.bin") for save in (True, False)):
             self.files[corrupt] = (self.source / corrupt).read_bytes()
             self.ops.inspect((paths["brec"],))
 
@@ -236,7 +238,7 @@ class NativeTests(unittest.TestCase):
                 return result
 
             with self.simulated(run), self.assertRaises(toolkit.ToolkitError):
-                self.ops.flash_selection(self.ops.selection, self.base / f"before-{corrupt}.zip")
+                self.ops.flash_selection(self.ops.selection, self.base / f"before-{corrupt}.zip" if save_backup else None)
             self.assertNotEqual(self.calls[-1], "reset")
             self.files = {name: (self.source / name).read_bytes() for name in toolkit.BUNDLE_FILES}
 
@@ -265,6 +267,87 @@ class NativeTests(unittest.TestCase):
         self.assertTrue(result["normal_mode"])
         self.assertEqual(self.calls, ["adfus_existing", "nand_scan", "fwsc_start", "read_before", "write_lfi", "finalize", "read_after", "reset"])
         self.assertEqual((self.source / "lfi.bin").read_bytes(), self.image)
+
+    def test_all_seven_component_combinations_can_skip_backup_without_skipping_verification(self):
+        paths = self.changed_candidates()
+        original = self.files.copy()
+        for mask in range(1, 8):
+            with self.subTest(mask=mask):
+                self.files, self.device_image, self.calls = original.copy(), self.image, []
+                areas = [area for index, area in enumerate(images.AREA_FILES) if mask & (1 << index)]
+                self.ops.inspect(tuple(paths[area] for area in areas))
+                with self.simulated(), mock.patch.object(archive, "save_checked") as save, \
+                        mock.patch.object(archive, "export_backup") as export:
+                    result = self.ops.flash_selection(self.ops.selection, None)
+                save.assert_not_called()
+                export.assert_not_called()
+                self.assertTrue(result["normal_mode"])
+                self.assertIsNone(self.ops.pending_backup)
+                self.assertNotIn("read_before", self.calls)
+                self.assertEqual(self.calls.count("read_after"), int("lfi" in areas))
+                self.assertEqual(self.calls.count("read_header"), int("lfi" in areas))
+                self.assertEqual([call for call in self.calls if call.startswith("write_")],
+                                 [f"write_{area}" for area in areas])
+                self.assertEqual(self.calls[-1], "reset")
+                if "mbrec" in areas or "brec" in areas:
+                    self.assertEqual(self.calls.count("read_brec0"), 2)
+                    self.assertEqual(self.calls.count("read_brec1"), 2)
+                    first_write = self.calls.index(f"write_{areas[0]}")
+                    self.assertEqual(self.calls[first_write - 1], "fwsc_start")
+                if "lfi" in areas:
+                    header_name = "boot_preflight/lfi.bin" if self.ops.selection.has_boot else "device_header.bin"
+                    self.assertEqual((self.ops.log.directory / header_name).read_bytes(), self.image[:512])
+                self.assertTrue(any(event.get("event") == "backup_skipped" for event in self.events))
+
+    def test_skipping_backup_rejects_short_or_different_device_header_before_write(self):
+        for short_read in (True, False):
+            with self.subTest(short_read=short_read):
+                self.calls.clear()
+
+                def run(backend, name, *args, short_read=short_read, **kwargs):
+                    result = self.backend(backend, name, *args, **kwargs)
+                    if name == "read_header":
+                        data = bytearray(Path(args[-1]).read_bytes())
+                        if short_read:
+                            data = data[:-1]
+                        else:
+                            data[self.profile.protocol["preserve_header_ranges"][0][0]] ^= 1
+                        Path(args[-1]).write_bytes(data)
+                    return result
+
+                with self.simulated(run), self.assertRaises(toolkit.ToolkitError):
+                    self.ops.flash(self.source / "lfi.bin", None)
+                self.assertEqual(self.calls[-1], "read_header")
+                self.assertNotIn("write_lfi", self.calls)
+
+    def test_skipping_backup_keeps_mbrec_geometry_check(self):
+        self.ops.inspect((self.source / "mbrec.bin",))
+        changed = bytearray(self.files["mbrec.bin"])
+        changed[3] ^= 1
+        self.files["mbrec.bin"] = self.files["mbrec_copy.bin"] = bytes(changed)
+        with self.simulated(), self.assertRaisesRegex(toolkit.ToolkitError, "NAND-Geometrie"):
+            self.ops.flash_selection(self.ops.selection, None)
+        self.assertFalse(any(call.startswith("write_") for call in self.calls))
+
+    def test_skipping_backup_keeps_full_lfi_readback_and_stops_on_difference(self):
+        def run(backend, name, *args, **kwargs):
+            result = self.backend(backend, name, *args, **kwargs)
+            if name == "read_after":
+                data = bytearray(Path(args[-1]).read_bytes())
+                # A different but fully valid LFI must still fail the byte comparison.
+                entry = list(x6_lfi.lfi_entries(data).values())[-1]
+                data[entry.data_offset] ^= 1
+                struct.pack_into("<I", data, entry.directory_offset + 28,
+                                 x6_lfi.word_sum(data[entry.data_offset:entry.data_offset + entry.length], 4))
+                struct.pack_into("<I", data, 16, x6_lfi.word_sum(data[512:8192], 4))
+                struct.pack_into("<H", data, 510, x6_lfi.word_sum(data[:510], 2))
+                Path(args[-1]).write_bytes(data)
+            return result
+
+        with self.simulated(run), self.assertRaisesRegex(toolkit.ToolkitError, "readback differs"):
+            self.ops.flash(self.source / "lfi.bin", None)
+        self.assertEqual(self.calls[-1], "read_after")
+        self.assertNotIn("reset", self.calls)
 
     def test_save_failure_prevents_every_flash_write(self):
         with self.simulated(), mock.patch.object(archive, "save_checked", side_effect=OSError("disk full")), self.assertRaises(OSError):

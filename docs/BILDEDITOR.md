@@ -1,6 +1,6 @@
 # Bilder bearbeiten · Windows und Web
 
-Der Bildeditor in **v0.3.0-beta.6 (lokaler Build)** ersetzt vorhandene Bilder in deinen eigenen
+Der Bildeditor in **v0.3.0-beta.7 (lokaler Build)** ersetzt vorhandene Bilder in deinen eigenen
 Firmwaredateien. Er liefert keine Firmware oder Bildsammlung mit. Bearbeiten
 und Speichern benötigen weder Player noch Windows-Helfer auf der Website.
 
@@ -142,7 +142,9 @@ Dateien oder Schließen schützt noch nicht gespeicherte Änderungen.
 1. Player ausdrücklich verbinden.
 2. **Änderungen flashen** wählen. Die Bestätigung nennt die Bildplätze und
    genau die betroffenen Bereiche: LFI, BREC oder BREC + LFI.
-3. Rücksicherung unter einem neuen Namen speichern lassen.
+3. Mit **Vor dem Flashen sichern** die Rücksicherung wählen. Die Checkbox ist
+   mit der Hauptansicht synchronisiert und zunächst aktiviert. Abgewählt entfällt
+   der vollständige Vorabdump und der Speicherdialog; Geräteprüfungen bleiben aktiv.
 4. Schreiben, vollständiges Rücklesen und Neustart abwarten.
 
 Der Editor schreibt **kein MBREC**. Für BREC werden beide Kopien zurückgelesen.

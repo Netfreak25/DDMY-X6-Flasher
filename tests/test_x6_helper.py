@@ -117,6 +117,22 @@ class HelperTests(unittest.TestCase):
             self.finish()
         inspect.assert_called_once_with((Path("a.bin"), Path("b.bin")))
 
+    def test_flash_without_backup_skips_picker_for_standard_and_editor_actions(self):
+        selection = SimpleNamespace(label="BREC + LFI", areas=("brec", "lfi"), has_boot=True)
+        self.window.operations.selection = selection
+        self.assertTrue(self.window.backup_before_flash.get())
+        self.window.backup_before_flash.set(False)
+        for labels in (None, ["Startbild"]):
+            with self.subTest(editor=bool(labels)), \
+                    mock.patch.object(helper.messagebox, "askokcancel", return_value=True) as confirm, \
+                    mock.patch.object(helper.filedialog, "asksaveasfilename") as save, \
+                    mock.patch.object(self.window.operations, "flash_selection", return_value={"message": "Geprüft"}) as flash:
+                self.window.flash(selection, labels)
+                self.finish()
+                save.assert_not_called()
+                flash.assert_called_once_with(selection, None)
+                self.assertIn("Ohne neue Rücksicherung", confirm.call_args.args[1])
+
     def test_restore_folder_and_unverified_result_are_visible(self):
         with mock.patch.object(helper.filedialog, "askdirectory", return_value="backup-folder"):
             self.window.choose_folder()
@@ -135,6 +151,20 @@ class HelperTests(unittest.TestCase):
         self.window.poll()
         self.assertEqual(self.window.progress.cget("value"), 32)
         self.assertIn("25%", self.window.progress_text.get())
+
+    def test_restart_wait_keeps_flat_style_and_does_not_redraw_duplicate_phases(self):
+        self.assertEqual(self.window.progress.cget("style"), "X6.Horizontal.TProgressbar")
+        with mock.patch.object(self.window.progress, "start") as animate:
+            self.window.events.put({"event": "phase", "label": "Neustarten"})
+            self.window.poll()
+            with mock.patch.object(self.window.progress, "configure") as configure:
+                for _ in range(20):
+                    self.window.events.put({"event": "phase", "label": "Neustarten"})
+                self.window.poll()
+                configure.assert_not_called()
+            animate.assert_not_called()
+        self.assertEqual(str(self.window.progress.cget("mode")), "determinate")
+        self.assertEqual(self.window.progress.cget("value"), 0)
 
     def test_minimum_window_does_not_clip_action_or_footer_buttons(self):
         self.root.geometry("720x760+10000+10000")

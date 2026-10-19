@@ -27,6 +27,16 @@ test('BREC writer prepares one transfer copy; original backup survives unchanged
   assert.equal(calls[1].data, files['mbrec.bin']);
 });
 
+test('header-only read loads the checked flash driver before reading one sector', async () => {
+  const calls = [], expected = files['lfi.bin'].subarray(0, profile.sector_size);
+  const driver = new X6Driver({readLfiHeader: async () => {calls.push('header'); return expected;}}, profile, payload);
+  driver.flashDriver = async () => calls.push('driver');
+  assert.deepEqual(await driver.readLfiHeader(), expected);
+  assert.deepEqual(calls, ['driver', 'header']);
+  driver.usb.readLfiHeader = async () => expected.subarray(0, expected.length - 1);
+  await assert.rejects(driver.readLfiHeader(), /Header.*nicht vollständig/);
+});
+
 test('BREC preparation rejects a wrong driver or invalid finalized header', async () => {
   const original = files['brec0.bin'].slice(), code = (await payload('fwsc.bin')).slice();
   code[0x4c2] ^= 1;

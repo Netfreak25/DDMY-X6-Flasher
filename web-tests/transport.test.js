@@ -101,3 +101,15 @@ test('interrupted LFI reads retain only confirmed blocks and use the read prefix
   const packets = calls.filter(call => call?.data?.length === 31).map(call => view(call.data));
   assert.deepEqual(packets.map(packet => packet.getUint32(24, true)), [0x80000000, 0x80000001]);
 });
+
+test('optional-backup header check reads exactly the first sector once', async () => {
+  const header = new Uint8Array(profile.sector_size).fill(0x5a);
+  const {device, calls} = fakeUSB([response(header)]);
+  const usb = new ActionsUSB(device, profile);
+  await usb.open();
+  assert.deepEqual(await usb.readLfiHeader(), header);
+  const packets = calls.filter(call => call?.data?.length === 31).map(call => view(call.data));
+  assert.equal(packets.length, 1);
+  assert.equal(packets[0].getUint32(24, true), 0x80000000);
+  assert.equal(packets[0].getUint32(20, true), 1);
+});
