@@ -1,6 +1,6 @@
 # Bilder bearbeiten · Windows und Web
 
-Der Bildeditor in **v0.3.0-beta.1** ersetzt vorhandene Bilder in deinen eigenen
+Der Bildeditor in **v0.3.0-beta.2** ersetzt vorhandene Bilder in deinen eigenen
 Firmwaredateien. Er liefert keine Firmware oder Bildsammlung mit. Bearbeiten
 und Speichern benötigen weder Player noch Windows-Helfer auf der Website.
 

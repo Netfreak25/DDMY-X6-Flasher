@@ -1,5 +1,16 @@
 # Änderungen
 
+## 0.3.0-beta.2
+
+- Windows-Bildeditor: Die Galerie nutzt die gesamte verfügbare Breite und passt
+  ihre Spaltenzahl beim Vergrößern und Verkleinern des Fensters an.
+- Die leere weiße Fläche entfällt; der Galeriehintergrund folgt dem Fensterthema.
+- Die Beschriftung des frühen Startbilds bleibt auch ohne geladenes BREC lesbar.
+- Regressionstest mit 960, 1040 und 1920 Pixel Fensterbreite sowie anschließendem
+  Verkleinern; Auswahl und bereits bearbeitete Bilder bleiben erhalten.
+- Native GUI-Tests und EXE-Selbsttest ohne Gerätezugriff. Die Flashfunktionen
+  bleiben ein auf Hardware unverifizierter Build-Kandidat.
+
 ## 0.3.0-beta.1
 
 - Bildeditor in der nativen Windows-App und auf Pages: 14 feste Bildplätze mit

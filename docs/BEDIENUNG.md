@@ -144,6 +144,6 @@ Rücklesung, beide BREC-Kopien und LFI. Musik und SD-Karte gehören nicht dazu.
 
 ## Prüfstand
 
-Version 0.3.0-beta.1: automatisiert und mit vorhandenen Dateien offline geprüft,
+Version 0.3.0-beta.2: automatisiert und mit vorhandenen Dateien offline geprüft,
 **auf Hardware unverifizierter Build-Kandidat**. Für diese Version wurde der
 physische Player nicht angesprochen.

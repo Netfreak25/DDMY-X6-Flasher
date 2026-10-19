@@ -6,7 +6,7 @@ Eine portable **Windows-App** zum Sichern, Vergleichen und Flashen des
 **DDMY X6 mit Actions ATJ2157**. Dieselben Hauptfunktionen stehen auch auf
 unserer WebUSB-Seite bereit.
 
-**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/tag/v0.3.0-beta.1)** ·
+**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/tag/v0.3.0-beta.2)** ·
 **[Online-Flasher öffnen](https://netfreak25.github.io/DDMY-X6-Flasher/)** ·
 **[Bedienung](docs/BEDIENUNG.md)**
 
@@ -127,7 +127,7 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.3.0-beta.1 ist ein auf Hardware unverifizierter Build-Kandidat.**
+**v0.3.0-beta.2 ist ein auf Hardware unverifizierter Build-Kandidat.**
 Automatisierte Tests prüfen native Abläufe, ZIP-Austausch mit JavaScript,
 fehlende Bestätigungen, Zeitüberschreitungen, Rücklesefehler, GUI, HTTP-Grenzen
 und simuliertes WebUSB. Alle sieben Bereichskombinationen werden mit simulierten

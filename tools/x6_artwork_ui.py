@@ -14,6 +14,7 @@ from PIL import Image, ImageTk
 
 BACKGROUND = "#f3f8f6"
 INK = "#173b36"
+GALLERY_TILE_PADDING_X = 4
 
 
 class CropDialog:
@@ -146,19 +147,22 @@ class ArtworkWindow:
         body.pack(fill="both", expand=True, pady=12)
         gallery_frame = ttk.Frame(body)
         gallery_frame.pack(side="left", fill="both", expand=True, padx=(0, 18))
-        self.gallery_canvas = tk.Canvas(gallery_frame, width=300, bg="white", highlightthickness=0)
+        gallery_background = ttk.Style(self.window).lookup("TFrame", "background") or BACKGROUND
+        self.gallery_canvas = tk.Canvas(gallery_frame, width=300, bg=gallery_background, highlightthickness=0)
         scroll = ttk.Scrollbar(gallery_frame, orient="vertical", command=self.gallery_canvas.yview)
         self.gallery_canvas.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
         self.gallery_canvas.pack(side="left", fill="both", expand=True)
         self.gallery = ttk.Frame(self.gallery_canvas)
-        self.gallery_canvas.create_window((0, 0), window=self.gallery, anchor="nw")
+        self.gallery_window = self.gallery_canvas.create_window((0, 0), window=self.gallery, anchor="nw")
+        self.gallery_columns = 0
+        self.gallery_canvas.bind("<Configure>", self.resize_gallery)
         self.gallery.bind("<Configure>", lambda _event: self.gallery_canvas.configure(scrollregion=self.gallery_canvas.bbox("all")))
         self.gallery_canvas.bind("<MouseWheel>", lambda event: self.gallery_canvas.yview_scroll(-int(event.delta / 120), "units"))
         for index, slot in enumerate(self.config["slots"]):
-            button = ttk.Button(self.gallery, text=slot["label"] + "\nNicht geladen", width=23,
+            button = ttk.Button(self.gallery, text=self.slot_label(slot) + "\nNicht geladen", width=23,
                                 command=lambda key=slot["id"]: self.select(key), compound="top")
-            button.grid(row=index // 2, column=index % 2, padx=4, pady=6)
+            button.grid(row=index // 2, column=index % 2, padx=GALLERY_TILE_PADDING_X, pady=6)
             self.tiles[slot["id"]] = button
         detail = ttk.Frame(body)
         detail.pack(side="right", fill="y")
@@ -191,6 +195,28 @@ class ArtworkWindow:
         ttk.Label(panel, textvariable=host.activity, wraplength=960, foreground=INK).pack(fill="x", pady=(10, 0))
         self.window.protocol("WM_DELETE_WINDOW", self.close)
         self.update_controls()
+
+    @staticmethod
+    def slot_label(slot):
+        """Keep the long boot-slot title readable, including when BREC is absent."""
+        return "Frühes Startbild\n(beide Bootkopien)" if slot["id"] == "boot-startup" else slot["label"]
+
+    def resize_gallery(self, event):
+        """Fill the canvas with as many readable tile columns as its width permits."""
+        width = max(1, event.width)
+        self.gallery_canvas.itemconfigure(self.gallery_window, width=width)
+        if not self.tiles:
+            return
+        tile_width = max(button.winfo_reqwidth() for button in self.tiles.values()) + 2 * GALLERY_TILE_PADDING_X
+        columns = max(1, min(len(self.tiles), width // tile_width))
+        if columns == self.gallery_columns:
+            return
+        for column in range(max(columns, self.gallery_columns)):
+            self.gallery.columnconfigure(column, weight=1 if column < columns else 0,
+                                         uniform="artwork" if column < columns else "")
+        for index, button in enumerate(self.tiles.values()):
+            button.grid_configure(row=index // columns, column=index % columns, sticky="nsew")
+        self.gallery_columns = columns
 
     def button(self, parent, text, command):
         button = ttk.Button(parent, text=text, command=command)
@@ -291,10 +317,10 @@ class ArtworkWindow:
                 image = Image.frombytes("RGB", (self.config["width"], self.config["height"]), self.model.rgb(key))
                 image.thumbnail((84, 112))
                 self.photos[key] = ImageTk.PhotoImage(image, master=self.window)
-                label = slot["label"] if key != "boot-startup" else "Frühes Startbild\n(beide Bootkopien)"
+                label = self.slot_label(slot)
                 self.tiles[key].configure(image=self.photos[key], text=label + ("\n● Geändert" if key in self.model.edits else ""))
             else:
-                self.tiles[key].configure(image="", text=slot["label"] + "\nNicht geladen")
+                self.tiles[key].configure(image="", text=self.slot_label(slot) + "\nNicht geladen")
         self.refresh_previews()
         self.update_controls()
 

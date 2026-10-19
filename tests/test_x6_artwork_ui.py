@@ -67,6 +67,29 @@ class EditorWindowTests(unittest.TestCase):
         self.assertEqual(self.data.editor.edits, {})
         self.assertFalse(self.editor.dirty)
 
+    def test_gallery_fills_window_and_reflows_without_losing_edits(self):
+        """Reproduce the large blank canvas after maximizing, then shrink again."""
+        self.data.editor.replace("shutdown", self.data.red)
+        self.editor.select("shutdown")
+        self.editor.refresh()
+        edits = dict(self.data.editor.edits)
+        columns = []
+        for size in ("960x720", "1040x780", "1920x1000", "1040x780"):
+            with self.subTest(size=size):
+                self.editor.window.geometry(size + "+10000+10000")
+                self.root.update()
+                canvas, gallery = self.editor.gallery_canvas, self.editor.gallery
+                columns.append(max(int(button.grid_info()["column"]) for button in self.editor.tiles.values()) + 1)
+                self.assertEqual(gallery.winfo_width(), canvas.winfo_width())
+                theme = ui.ttk.Style(self.editor.window).lookup("TFrame", "background") or ui.BACKGROUND
+                self.assertEqual(canvas.winfo_rgb(canvas.cget("background")), canvas.winfo_rgb(theme))
+                for button in self.editor.tiles.values():
+                    self.assertLessEqual(button.winfo_x() + button.winfo_width(), canvas.winfo_width())
+                self.assertEqual(self.editor.active, "shutdown")
+                self.assertEqual(self.data.editor.edits, edits)
+        self.assertGreater(columns[2], columns[1])
+        self.assertEqual(columns[1], columns[3])
+
     def test_saving_is_offline_even_while_pages_has_device_lease(self):
         self.data.editor.replace("background-01", self.data.red)
         self.editor.dirty = True
