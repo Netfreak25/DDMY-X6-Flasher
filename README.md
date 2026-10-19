@@ -134,7 +134,10 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.3.0-beta.3 ist ein auf Hardware unverifizierter Build-Kandidat.**
+**v0.3.0-beta.4 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
+Neu: automatische Hintergrundaufbereitung bei erkannter Kontur-Firmware in
+Windows und Web. Die Downloadlinks zeigen weiterhin auf die veröffentlichte
+beta.3; beta.4 wurde nicht veröffentlicht.
 Automatisierte Tests prüfen native Abläufe, ZIP-Austausch mit JavaScript,
 fehlende Bestätigungen, Zeitüberschreitungen, Rücklesefehler, GUI, HTTP-Grenzen
 und simuliertes WebUSB. Alle sieben Bereichskombinationen werden mit simulierten

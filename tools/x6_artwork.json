@@ -6,23 +6,279 @@
   "max_input_bytes": 26214400,
   "max_input_pixels": 40000000,
   "max_zoom": 4,
-  "sty": {"magic": 422794578, "count_offset": 20, "table_offset": 1024, "record_size": 16, "format": 2},
-  "brec": {"descriptor_magic": [82, 69, 83, 25], "code_sectors": 92, "total_sectors": 393},
-  "startup_ids": ["startup", "boot-startup"],
+  "sty": {
+    "magic": 422794578,
+    "count_offset": 20,
+    "table_offset": 1024,
+    "record_size": 16,
+    "format": 2
+  },
+  "brec": {
+    "descriptor_magic": [
+      82,
+      69,
+      83,
+      25
+    ],
+    "code_sectors": 92,
+    "total_sectors": 393
+  },
+  "startup_ids": [
+    "startup",
+    "boot-startup"
+  ],
   "slots": [
-    {"id": "background-01", "label": "Hintergrund 1", "area": "lfi", "file": "COMMON.STY", "index": 298, "endian": "little"},
-    {"id": "background-02", "label": "Hintergrund 2", "area": "lfi", "file": "COMMON.STY", "index": 299, "endian": "little"},
-    {"id": "background-03", "label": "Hintergrund 3", "area": "lfi", "file": "COMMON.STY", "index": 300, "endian": "little"},
-    {"id": "background-04", "label": "Hintergrund 4", "area": "lfi", "file": "COMMON.STY", "index": 301, "endian": "little"},
-    {"id": "background-05", "label": "Hintergrund 5", "area": "lfi", "file": "COMMON.STY", "index": 302, "endian": "little"},
-    {"id": "background-06", "label": "Hintergrund 6", "area": "lfi", "file": "COMMON.STY", "index": 303, "endian": "little"},
-    {"id": "background-07", "label": "Hintergrund 7", "area": "lfi", "file": "COMMON.STY", "index": 304, "endian": "little"},
-    {"id": "background-08", "label": "Hintergrund 8", "area": "lfi", "file": "COMMON.STY", "index": 305, "endian": "little"},
-    {"id": "background-09", "label": "Hintergrund 9", "area": "lfi", "file": "COMMON.STY", "index": 306, "endian": "little"},
-    {"id": "background-10", "label": "Hintergrund 10", "area": "lfi", "file": "COMMON.STY", "index": 307, "endian": "little"},
-    {"id": "background-11", "label": "Hintergrund 11", "area": "lfi", "file": "COMMON.STY", "index": 308, "endian": "little"},
-    {"id": "startup", "label": "Startbild", "area": "lfi", "file": "LOGO.STY", "index": 0, "endian": "little"},
-    {"id": "shutdown", "label": "Ausschaltbild", "area": "lfi", "file": "END.STY", "index": 0, "endian": "little"},
-    {"id": "boot-startup", "label": "Frühes Startbild (beide Bootkopien)", "area": "brec", "endian": "big"}
-  ]
+    {
+      "id": "background-01",
+      "label": "Hintergrund 1",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 298,
+      "endian": "little"
+    },
+    {
+      "id": "background-02",
+      "label": "Hintergrund 2",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 299,
+      "endian": "little"
+    },
+    {
+      "id": "background-03",
+      "label": "Hintergrund 3",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 300,
+      "endian": "little"
+    },
+    {
+      "id": "background-04",
+      "label": "Hintergrund 4",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 301,
+      "endian": "little"
+    },
+    {
+      "id": "background-05",
+      "label": "Hintergrund 5",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 302,
+      "endian": "little"
+    },
+    {
+      "id": "background-06",
+      "label": "Hintergrund 6",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 303,
+      "endian": "little"
+    },
+    {
+      "id": "background-07",
+      "label": "Hintergrund 7",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 304,
+      "endian": "little"
+    },
+    {
+      "id": "background-08",
+      "label": "Hintergrund 8",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 305,
+      "endian": "little"
+    },
+    {
+      "id": "background-09",
+      "label": "Hintergrund 9",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 306,
+      "endian": "little"
+    },
+    {
+      "id": "background-10",
+      "label": "Hintergrund 10",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 307,
+      "endian": "little"
+    },
+    {
+      "id": "background-11",
+      "label": "Hintergrund 11",
+      "area": "lfi",
+      "file": "COMMON.STY",
+      "index": 308,
+      "endian": "little"
+    },
+    {
+      "id": "startup",
+      "label": "Startbild",
+      "area": "lfi",
+      "file": "LOGO.STY",
+      "index": 0,
+      "endian": "little"
+    },
+    {
+      "id": "shutdown",
+      "label": "Ausschaltbild",
+      "area": "lfi",
+      "file": "END.STY",
+      "index": 0,
+      "endian": "little"
+    },
+    {
+      "id": "boot-startup",
+      "label": "Frühes Startbild (beide Bootkopien)",
+      "area": "brec",
+      "endian": "big"
+    }
+  ],
+  "screensaver": {
+    "schema": 2,
+    "revision": "v4-native-contour",
+    "width": 240,
+    "height": 320,
+    "background_base": 298,
+    "background_count": 11,
+    "first_slot_shift_y": 49,
+    "upper": [
+      [
+        0,
+        255
+      ],
+      [
+        78,
+        210
+      ],
+      [
+        190,
+        255
+      ]
+    ],
+    "lower": [
+      [
+        225,
+        255
+      ],
+      [
+        319,
+        225
+      ]
+    ],
+    "preview_lfi_sha256": "b56f1ddbc09b693bd4704362b964bb9dc956c4566743729742b23c7439c4a83f",
+    "thresholds": {
+      "clock_date": 46518,
+      "arrow": 31695
+    },
+    "outline": {
+      "radius": 1,
+      "color565": 4226,
+      "connectivity": 8
+    },
+    "clock": {
+      "digit_base": 271,
+      "colon": 283,
+      "am": 281,
+      "pm": 282,
+      "y": 51,
+      "x24": [
+        64,
+        87,
+        110,
+        133,
+        156
+      ],
+      "x12": [
+        54,
+        77,
+        100,
+        123,
+        146
+      ],
+      "ampm_x": 169
+    },
+    "date": {
+      "weekday_base": 291,
+      "month_base": 257,
+      "digit_base": 247,
+      "weekday": [
+        72,
+        96
+      ],
+      "month": [
+        130,
+        96
+      ],
+      "tens": [
+        110,
+        97
+      ],
+      "units": [
+        120,
+        97
+      ]
+    },
+    "examples": [
+      {
+        "id": "primary",
+        "datetime": "2026-10-18T23:00:00",
+        "hour12": false
+      },
+      {
+        "id": "second",
+        "datetime": "2026-03-25T08:08:00",
+        "hour12": false
+      }
+    ],
+    "featured_slots": [
+      7,
+      3,
+      10,
+      9
+    ],
+    "arrow": [
+      397,
+      110,
+      270
+    ],
+    "hint": {
+      "text": "Nach oben wischen",
+      "rectangle": [
+        0,
+        290,
+        240,
+        16
+      ]
+    },
+    "font_record_size": 33,
+    "font_height": 16,
+    "native_hint_pixels": 279,
+    "supported_code": {
+      "FWUPDATE.AP": "c3813b2dcc78f4cf25394bb630a1bd1b0f0e3e2a6c74b0e3fc66ad56c677c45e",
+      "DRV_UI.DRV": "c4ca60d5b44da6e3a8b2feb15219eac4fc7a4198ff079b1697f0eededb19627a",
+      "UNICODE.FON": "79944e8a8cf4ac5848d98a0c5cdeeae926b1084a7dca4bdb215fc63b8e66c6bc",
+      "CONFIG.AP": "cd8eaa610ea10f1963070f92c59bdd4d5d5049adc3d5a3fa848f7268617890fa",
+      "MAINMENU.AP": "601dd817be6740502de587342c8fcce72c359c922afb7c7fd0a8a588bd2b817e",
+      "MUSIC.AP": "bd8408e9de5c123b165d0d2767dde76776e020ca8a573f88bb6bb41de10b9700",
+      "BROWSER.AP": "deab5bae1d12f2dbc2d2b9c290f1149bb58bf4579561318f880ffbb240c91562",
+      "PICTURE.AP": "a1f9456352e59ddb170c3721e7c46b555c5aab411383f6a582f343784fd62c66",
+      "SETTING.AP": "7c7aa4b624bfb1d1e951c708a7e13e4115dec5b358781ed560b32bba0854a2c8",
+      "VIDEO.AP": "5928183cb3e796ffae9c1bd9add1ad4e8a52a211a7c03f13d15683b662714edb",
+      "PLAYLIST.AP": "875e039d93df2255a940fca08b9851804de24a1f59f34bbc6ab8e62ec214a31b",
+      "EBOOK.AP": "12479aac1fe4f92165d8af02d9745a9ae9337ec1d55d91357acc494e6eff3f7d",
+      "TOOLS.AP": "65f196e1c768c4873cf7d5dc91911b9bb31c8569c7e064d6b25b1e2c04473b39",
+      "ALARM.AP": "ddcab8eb9f3be04bfeb743364642edb460ba33369d1207b1e66bb3e749d70377",
+      "RADIO.AP": "8657485d3c873fed88c2eed17d25a17c2d277d8af00ad48686f57b1f8f2ff815",
+      "RECORD.AP": "324ac7c71dd0d639bf5c5166fdf66a2a34ee120c1ed3e5b683c288efedc2c821",
+      "BT.AP": "24611580e928b6001f28d292d06f47d86cf29d38fb6cfd0d6c31b636d066c73c",
+      "PEDOMETE.AP": "ab35222426e66bd6b18ed35f90c112f4d8e70c54f72758a30bc11f7ed6c49cf5",
+      "STUDY.AP": "9a4f7e71d407ae7c4595b5fa3848879e741c0287922993936af25f6176a5c676"
+    }
+  }
 }

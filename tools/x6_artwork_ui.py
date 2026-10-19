@@ -20,13 +20,14 @@ GALLERY_TILE_PADDING_X = 4
 class CropDialog:
     """Non-destructive crop state; only Apply transfers packed pixels to the editor."""
 
-    def __init__(self, parent, source: Image.Image, config: dict, apply, options=None):
+    def __init__(self, parent, source: Image.Image, config: dict, apply, options=None, prepare=None):
         self.window = tk.Toplevel(parent)
         self.window.title("Bildausschnitt bearbeiten")
         self.window.transient(parent)
         self.window.grab_set()
         self.window.configure(bg=BACKGROUND)
         self.source, self.config, self.apply = source, config, apply
+        self.prepare = prepare or (lambda rgb: art.decode_rgb565(art.encode_rgb565(rgb, "little"), "little"))
         self.rotation = (options or {}).get("rotation", 0)
         self.mode = tk.StringVar(value=(options or {}).get("mode", "cover"))
         self.zoom = tk.DoubleVar(value=(options or {}).get("zoom", 1))
@@ -67,7 +68,7 @@ class CropDialog:
     def refresh(self):
         self.preview_id = None
         self.rgb = picture.render(self.source, **self.options()).tobytes()
-        decoded = art.decode_rgb565(art.encode_rgb565(self.rgb, "little"), "little")
+        decoded = self.prepare(self.rgb)
         image = Image.frombytes("RGB", (self.config["width"], self.config["height"]), decoded)
         self.photo = ImageTk.PhotoImage(image, master=self.window)
         self.canvas.delete("all")
@@ -230,7 +231,8 @@ class ArtworkWindow:
         changed = ready and bool(self.model.edits)
         for button in (self.replace_button, self.edit_button):
             button.configure(state="normal" if ready and self.active else "disabled")
-        self.reset_button.configure(state="normal" if ready and self.active in self.model.edits else "disabled")
+        can_reset = ready and (self.active in self.model.edits or self.model.contour)
+        self.reset_button.configure(state="normal" if can_reset else "disabled")
         for button in (self.save_button, self.package_button, self.flash_button):
             button.configure(state="normal" if changed else "disabled")
         if not changed or set(self.model.originals) != set(images.AREA_FILES):
@@ -351,10 +353,11 @@ class ArtworkWindow:
             self.model.replace(key, rgb)
             for target in targets:
                 self.sources[target] = (original, settings)
-            self.dirty = True
+            self.dirty = bool(self.model.edits)
             self.refresh()
 
-        self.crop_dialog = CropDialog(self.window, source, self.config, apply, options)
+        self.crop_dialog = CropDialog(self.window, source, self.config, apply, options,
+                                      prepare=lambda rgb: self.model.preview_rgb(key, rgb))
 
     def edit(self):
         if self.active in self.sources:

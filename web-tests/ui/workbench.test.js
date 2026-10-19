@@ -10,6 +10,7 @@ import { packBackup } from '../../lib/archive.js';
 import { profile, files as original, payload } from '../fixtures.js';
 import { artworkFixture, config as artworkConfig } from '../artwork-fixture.js';
 import { Artwork } from '../../lib/artwork.js';
+import { sha256 } from '../../lib/formats.js';
 
 let server, browser, origin;
 const artworkData = await artworkFixture();
@@ -484,6 +485,48 @@ test('artwork saves/reopens paired BINs and complete package without hardware; s
   await page.locator('#artwork-package').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vorgang gestoppt');
   assert.match(await page.locator('#activity-message').textContent(), /nicht überschrieben/);
+  assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('contour editor previews exported pixels through rotation, apply, cancel and both resets', async () => {
+  const {page, context, errors, apiCalls} = await pageFixture(true, artworkFiles, artworkData.profile);
+  const config = JSON.parse(JSON.stringify(artworkConfig));
+  config.screensaver.supported_code = {'T0000003.BIN': await sha256(new Uint8Array(4))};
+  await page.route('**/tools/x6_artwork.json', route => route.fulfill({json: config}));
+  await page.reload(); await openArtwork(page);
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
+  await replaceArtwork(page, 'background-01', false);
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
+  await page.locator('#artwork-edit').click();
+  const crop = async () => page.evaluate(() => [...document.getElementById('crop-preview').getContext('2d').getImageData(0, 0, 240, 320).data]);
+  const initial = await crop();
+  await page.locator('#crop-rotate').click();
+  await page.locator('#crop-x').fill('0.5');
+  await page.locator('#crop-x').dispatchEvent('input');
+  await page.locator('#crop-reset').click();
+  assert.deepEqual(await crop(), initial);
+  await page.locator('#crop-apply').click();
+  const result = await page.evaluate(() => [...document.getElementById('artwork-preview').getContext('2d').getImageData(0, 0, 240, 320).data]);
+  assert.deepEqual(result, initial);
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 1);
+  await page.locator('#artwork-reset').click();
+  // Reset processes immutable original pixels; original white needs the gradient.
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 1);
+  await page.locator('#artwork-save').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Bearbeitete BINs gespeichert.');
+  const reopened = await page.evaluate(async () => {
+    const {selectImages} = await import('./lib/images.js');
+    const {Artwork} = await import('./lib/artwork.js');
+    const profile = await (await fetch('./tools/x6_profile.json')).json();
+    const config = await (await fetch('./tools/x6_artwork.json')).json();
+    const file = await window.__handles['x6-bilder-lfi.bin'].getFile();
+    const model = await Artwork.create(await selectImages([file], profile), profile, config);
+    const before = [...model.pixels('background-01')];
+    model.reset('background-01');
+    return {contour: model.contour, unchanged: before.every((v, i) => v === model.pixels('background-01')[i]), edits: model.edits.size};
+  });
+  assert.deepEqual(reopened, {contour: true, unchanged: true, edits: 0});
   assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
   await context.close();
 });

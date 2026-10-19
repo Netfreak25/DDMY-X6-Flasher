@@ -466,9 +466,15 @@ def self_test(window: HelperWindow, profile: toolkit.Profile, runtime: Path) -> 
 
     import x6_artwork as artwork
     import x6_picture as picture
+    import x6_screensaver as screensaver
     from PIL import Image
 
     checked_formats = []
+    screen_profile = artwork.catalog()["screensaver"]
+    sample = b"\xff\xff" * screen_profile["width"] * screen_profile["height"]
+    processed = screensaver.process(sample, screen_profile, 1)
+    if processed == sample or screensaver.process(processed, screen_profile, 1) != processed:
+        raise toolkit.ToolkitError("Bildschirmschoner-Aufbereitung fehlgeschlagen.")
     for format_name in ("PNG", "JPEG", "WEBP"):
         buffer = io.BytesIO()
         Image.new("RGB", (4, 2), "red").save(buffer, format=format_name)
@@ -487,6 +493,7 @@ def self_test(window: HelperWindow, profile: toolkit.Profile, runtime: Path) -> 
             "controls": [button.cget("text") for button in window.controls], "buttons_fit": fits,
             "poweroff_payload_size": len(payload), "backend_hashes_checked": True,
             "device_access": False, "browser_started": False,
+            "screensaver_revision": screen_profile["revision"],
             "artwork_slots": slots if len(artwork.catalog()["slots"]) == slots else 0, "artwork_formats": checked_formats,
             "workspace_outside_resources": not toolkit.PRIVATE_ROOT.is_relative_to(toolkit.ROOT)}
 

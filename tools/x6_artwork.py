@@ -11,6 +11,7 @@ from pathlib import Path
 import x6_archive as archive
 import x6_images as images
 import x6_lfi as lfi
+import x6_screensaver as screensaver
 import x6_toolkit as tk
 from x6_brec_transfer import validate_brec
 
@@ -113,7 +114,7 @@ def locate(components: dict[str, bytes], profile: tk.Profile, config: dict) -> d
 
 
 class Artwork:
-    """Immutable originals plus pixel replacements; reset never re-encodes originals."""
+    """Immutable originals plus prepared replacements; opening never changes pixels."""
 
     def __init__(self, selection: images.Selection, profile: tk.Profile):
         self.profile, self.selection, self.config = profile, selection, catalog()
@@ -126,6 +127,8 @@ class Artwork:
             raise ValueError("LFI oder BREC mit Bildern fehlt.")
         self.edits: dict[str, bytes] = {}
         self.coupled = all(key in self.ranges for key in self.config["startup_ids"])
+        data = self.originals.get("lfi")
+        self.contour = bool(data and screensaver.supported(data, lfi.lfi_entries(data), self.config.get("screensaver")))
 
     def targets(self, key: str) -> list[str]:
         if key not in self.ranges:
@@ -140,19 +143,40 @@ class Artwork:
     def rgb(self, key: str, original: bool = False) -> bytes:
         return decode_rgb565(self.pixels(key, original), self.ranges[key].slot["endian"])
 
+    def prepare_pixels(self, key: str, raw: bytes) -> bytes:
+        """Treat only supported screensaver slots; starts and shutdown stay exact."""
+        slot = self.ranges[key].slot
+        profile = self.config.get("screensaver")
+        index = slot.get("index", -1) - (profile or {}).get("background_base", 0) + 1
+        if self.contour and slot.get("file") == "COMMON.STY" and 1 <= index <= profile["background_count"]:
+            return screensaver.process(raw, profile, index)
+        return raw
+
+    def prepare(self, key: str, rgb: bytes) -> bytes:
+        """One crop -> native pixels pipeline for both preview and Apply."""
+        if len(rgb) != self.config["width"] * self.config["height"] * 3:
+            raise ValueError("Das Bild muss genau 240 × 320 RGB-Pixel enthalten.")
+        return self.prepare_pixels(key, encode_rgb565(rgb, self.ranges[key].slot["endian"]))
+
+    def preview_rgb(self, key: str, rgb: bytes) -> bytes:
+        return decode_rgb565(self.prepare(key, rgb), self.ranges[key].slot["endian"])
+
+    def store(self, key: str, data: bytes) -> None:
+        """Determine change state by the actual exported bytes."""
+        if data == self.pixels(key, original=True):
+            self.edits.pop(key, None)
+        else:
+            self.edits[key] = data
+
     def replace(self, key: str, rgb: bytes) -> None:
         if len(rgb) != self.config["width"] * self.config["height"] * 3:
             raise ValueError("Das Bild muss genau 240 × 320 RGB-Pixel enthalten.")
         for target in self.targets(key):
-            data = encode_rgb565(rgb, self.ranges[target].slot["endian"])
-            if data == self.pixels(target, original=True):
-                self.edits.pop(target, None)
-            else:
-                self.edits[target] = data
+            self.store(target, self.prepare(target, rgb))
 
     def reset(self, key: str) -> None:
         for target in self.targets(key):
-            self.edits.pop(target, None)
+            self.store(target, self.prepare_pixels(target, self.pixels(target, original=True)))
 
     @property
     def changed_areas(self) -> tuple[str, ...]:

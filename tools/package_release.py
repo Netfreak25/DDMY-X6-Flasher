@@ -37,6 +37,8 @@ def windows_files() -> list[tuple[Path, str]]:
         (ROOT / "private_dumps/release/DDMY X6 Flasher.exe", "DDMY X6 Flasher.exe"),
         (ROOT / "docs/BEDIENUNG.md", "Bedienung.md"),
         (ROOT / "docs/BILDEDITOR.md", "BILDEDITOR.md"),
+        (ROOT / "site.json", "version.json"),
+        (ROOT / "tools/x6_artwork.json", "profiles/x6_artwork.json"),
         (ROOT / "THIRD_PARTY.md", "THIRD_PARTY.md"),
         (ROOT / "vendor/fflate.LICENSE", "licenses/fflate.txt"),
         (ROOT / "vendor/libusb.LICENSE", "licenses/libusb.txt"),

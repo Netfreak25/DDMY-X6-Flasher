@@ -1,6 +1,6 @@
 # Bilder bearbeiten · Windows und Web
 
-Der Bildeditor in **v0.3.0-beta.3** ersetzt vorhandene Bilder in deinen eigenen
+Der Bildeditor in **v0.3.0-beta.4 (lokaler Build)** ersetzt vorhandene Bilder in deinen eigenen
 Firmwaredateien. Er liefert keine Firmware oder Bildsammlung mit. Bearbeiten
 und Speichern benötigen weder Player noch Windows-Helfer auf der Website.
 
@@ -52,7 +52,8 @@ weiterhin, welchen der 11 Hintergründe der Screensaver verwendet.
   und ergänzt schwarze Ränder. Zoom, Ziehen oder die Positionsregler verschieben
   den Ausschnitt. Drehung erfolgt in 90°-Schritten.
 - **Übernehmen** wendet den Ausschnitt an. **Abbrechen** verändert keine Bildbytes.
-- **Änderung zurücksetzen** stellt die Originalbytes dieses Platzes wieder her.
+- **Änderung zurücksetzen** stellt das Originalmotiv dieses Platzes wieder her;
+  bei unterstützter Kontur-Firmware mit der unten beschriebenen Aufbereitung.
 
 EXIF-Ausrichtung wird berücksichtigt, Farben werden nach sRGB gebracht und
 Transparenz auf Schwarz verrechnet. Animierte Dateien werden abgewiesen. Das
@@ -65,6 +66,33 @@ Sind LFI und BREC geladen, ist **Startbilder gemeinsam ändern** standardmäßig
 aktiv. Eine Änderung oder ein Zurücksetzen betrifft dann beide Startphasen.
 Für unterschiedliche Motive die Kopplung vor der Bearbeitung lösen. Das Aktivieren
 der Kopplung allein verändert noch kein Bild.
+
+## Automatische Hintergrundaufbereitung
+
+Bei erkanntem Kontur-Zeichenpfad `v4-native-contour` erhalten die elf
+Bildschirmschoner-Hintergründe nach Ausschnitt und Drehung einen dezenten,
+an Bildschirmkoordinaten gebundenen Helligkeitsverlauf. Vorschau und Export
+verwenden dieselben RGB565-Pixel. Uhr, Datum und Kontur zeichnet der Player;
+sie werden niemals in das Hintergrundmotiv eingebrannt.
+
+Dies gilt für Upload, Bearbeiten, Übernehmen und beide Reset-Wege.
+**Ausschnitt zurücksetzen** setzt die Geometrie zurück. **Änderung zurücksetzen**
+verarbeitet die unveränderten Originalpixel erneut. Der Änderungsstatus folgt
+dem Bytevergleich: Braucht ein ursprünglich unbehandeltes Bild den Verlauf,
+bleibt es auch nach Reset als geändert markiert. Wiederholte Aufbereitung
+dunkelt das Motiv nicht weiter ab. Die Uploadquelle bleibt während der Sitzung
+erhalten; ein erneutes Öffnen kann frühere Ausschnitte nicht rekonstruieren.
+
+Bloßes Laden ändert nichts. Ältere oder unbekannte Firmware behält das bisherige
+Verhalten; der Flasher installiert keinen Kontur-Code. Startbild, frühes
+BREC-Startbild und Ausschaltbild erhalten keinen Verlauf.
+
+Das versionierte Profil liegt in `tools/x6_artwork.json` (Paket:
+`profiles/x6_artwork.json`). Python und JavaScript teilen Testvektoren:
+oberer Smoothstep `(0,255) → (78,210) → (190,255)`, für Hintergrund 1 um
+49 Pixel verschoben; unten `(225,255) → (319,225)`. Ganzzahlige Berechnung,
+Abrunden erst nach Smoothstep, RGB565-Kanalbegrenzung ohne erneute Abdunklung.
+Code-/Font-Hashes erkennen die unterstützte Firmware unabhängig von Bildern.
 
 ## Speichern
 

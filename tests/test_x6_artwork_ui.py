@@ -90,6 +90,38 @@ class EditorWindowTests(unittest.TestCase):
         self.assertGreater(columns[2], columns[1])
         self.assertEqual(columns[1], columns[3])
 
+    def test_contour_crop_preview_apply_cancel_and_both_resets(self):
+        """The visible crop is the exported pixel data, after every edit operation."""
+        model = self.data.editor
+        model.contour = True  # Recognition has separate byte-level tests.
+        self.editor.select("background-01")
+        source = ui.Image.new("RGB", (480, 320), "white")
+        source.paste("yellow", (0, 0, 240, 320))
+        self.editor.crop(source)
+        dialog = self.editor.crop_dialog
+        dialog.rotate()
+        dialog.pan_x.set(0.5)
+        dialog.window.after_cancel(dialog.preview_id)
+        dialog.refresh()
+        expected = model.preview_rgb("background-01", dialog.rgb)
+        self.assertEqual(ui.ImageTk.getimage(dialog.photo).convert("RGB").tobytes(), expected)
+        dialog.close()
+        self.assertEqual(model.edits, {})
+        self.editor.crop(source)
+        dialog = self.editor.crop_dialog
+        dialog.rotate()
+        dialog.reset()
+        dialog.accept()
+        expected = model.preview_rgb("background-01", dialog.rgb)
+        self.assertEqual(model.rgb("background-01"), expected)
+        self.assertEqual(source.getpixel((400, 200)), (255, 255, 255))
+        self.editor.edit()
+        self.editor.crop_dialog.accept()
+        self.assertEqual(model.rgb("background-01"), expected)
+        self.editor.reset()
+        self.assertEqual(model.edits, {})
+        self.assertFalse(self.editor.dirty)
+
     def test_saving_is_offline_even_while_pages_has_device_lease(self):
         self.data.editor.replace("background-01", self.data.red)
         self.editor.dirty = True
