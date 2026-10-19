@@ -57,6 +57,21 @@ Nach Boot-Schreibvorgängen werden beide BREC-Kopien und MBREC zurückgelesen:
 ausgewählte Bereiche müssen dem Kandidaten entsprechen, andere Bootbereiche
 müssen unverändert sein. Nur nach erfolgreicher Prüfung wird der Neustart versucht.
 
+## Bilder bearbeiten
+
+**Bilder bearbeiten** öffnet den Editor in der Windows-App; auf Pages heißt der
+Knopf **Bildeditor öffnen**. Eigene LFI-/BREC-BINs, ZIP-Pakete oder Sicherungsordner
+laden. 11 Hintergründe, normales Startbild, Ausschaltbild und frühes BREC-Startbild
+können ersetzt, zugeschnitten und zurückgesetzt werden. Die Startbilder sind
+bei geladenem LFI + BREC standardmäßig gekoppelt.
+
+**Geänderte BINs speichern** oder **Firmwarepaket speichern** benötigt keine
+Verbindung. **Änderungen flashen** verwendet nach Bestätigung den bestehenden
+Schreibweg für genau LFI, BREC oder beide; MBREC bleibt unverändert.
+**Vom Gerät laden** speichert zuerst eine vollständige Originalsicherung.
+
+[Ausführliche Anleitung und alle 14 Bildplätze](BILDEDITOR.md).
+
 ## Mit Gerät vergleichen
 
 Dateien wie beim Flashen auswählen, dann **Mit Gerät vergleichen**. Die erkannten
@@ -129,6 +144,6 @@ Rücklesung, beide BREC-Kopien und LFI. Musik und SD-Karte gehören nicht dazu.
 
 ## Prüfstand
 
-Version 0.2.0-beta.2: automatisiert und mit vorhandenen Dateien offline geprüft,
+Version 0.3.0-beta.1: automatisiert und mit vorhandenen Dateien offline geprüft,
 **auf Hardware unverifizierter Build-Kandidat**. Für diese Version wurde der
 physische Player nicht angesprochen.

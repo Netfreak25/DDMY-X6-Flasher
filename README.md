@@ -6,7 +6,7 @@ Eine portable **Windows-App** zum Sichern, Vergleichen und Flashen des
 **DDMY X6 mit Actions ATJ2157**. Dieselben Hauptfunktionen stehen auch auf
 unserer WebUSB-Seite bereit.
 
-**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/tag/v0.2.0-beta.2)** ·
+**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/tag/v0.3.0-beta.1)** ·
 **[Online-Flasher öffnen](https://netfreak25.github.io/DDMY-X6-Flasher/)** ·
 **[Bedienung](docs/BEDIENUNG.md)**
 
@@ -20,6 +20,7 @@ unserer WebUSB-Seite bereit.
 | Mit Gerät vergleichen | Alle ausgewählten Bereiche byteweise vergleichen, bei BREC beide Kopien. Beschädigtes Geräte-LFI bleibt vergleichbar. |
 | ADFU betreten / verlassen | Den Wartungsmodus direkt in der App wechseln; Erfolg erst nach erkannter USB-Anmeldung melden. |
 | Player ausschalten | Eigenen RAM-Code laden und zurücklesen. Nach Startbestätigung USB abziehen; der Code wartet darauf. |
+| Bilder bearbeiten | 11 Hintergründe, Startbild, Ausschaltbild und frühes BREC-Startbild ersetzen, zuschneiden und vergleichen. Geänderte BINs/Pakete lokal speichern oder genau die geänderten Bereiche flashen. |
 
 **Full umfasst Bootdatensätze und LFI**, etwa 62 MB. Musikdateien, der übrige
 NAND-Inhalt und die SD-Karte sind nicht enthalten. **BREC gehört zur vollständigen
@@ -48,6 +49,18 @@ Der frühere Offline-Webstarter und „Offline öffnen“ sind entfernt.
 Voraussetzungen: Windows 10/11 (64 Bit), WinUSB für ADFU `10D6:10D6`.
 Der normale Massenspeichertreiber bleibt bestehen. Bei einem Windows-Zugriffsfehler
 beim ADFU-Wechsel die App über **Als Administrator ausführen** starten.
+
+## Bildeditor
+
+**Bilder bearbeiten** öffnet die Galerie der 14 festen Bildplätze. LFI/BREC oder
+eine eigene Sicherung laden, ein Bild ersetzen und den Ausschnitt wählen. PNG,
+JPEG und WebP werden auf 240 × 320 RGB565 umgewandelt. Die Startbilder in LFI und
+BREC sind standardmäßig gekoppelt. Keine zusätzlichen Bildplätze, kein Löschen.
+
+Bearbeitung und Speichern sind offline möglich. **Vom Gerät laden** und
+**Änderungen flashen** greifen erst nach ausdrücklicher Auswahl auf den Player zu.
+Quellen werden nicht überschrieben, Exporte erneut geprüft. Bilder und Firmware
+bleiben lokal. [Anleitung und Liste aller Bildplätze](docs/BILDEDITOR.md).
 
 ## GitHub Pages weiterverwenden
 
@@ -114,7 +127,7 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.2.0-beta.2 ist ein auf Hardware unverifizierter Build-Kandidat.**
+**v0.3.0-beta.1 ist ein auf Hardware unverifizierter Build-Kandidat.**
 Automatisierte Tests prüfen native Abläufe, ZIP-Austausch mit JavaScript,
 fehlende Bestätigungen, Zeitüberschreitungen, Rücklesefehler, GUI, HTTP-Grenzen
 und simuliertes WebUSB. Alle sieben Bereichskombinationen werden mit simulierten
@@ -133,6 +146,7 @@ npm ci --ignore-scripts
 npm test
 npm run test:ui
 npm run lint
+python -m pip install -r tools/requirements.txt
 python -m unittest discover -s tests -q
 python -m ruff check tools tests
 ```

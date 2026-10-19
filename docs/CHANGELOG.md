@@ -1,5 +1,25 @@
 # Änderungen
 
+## 0.3.0-beta.1
+
+- Bildeditor in der nativen Windows-App und auf Pages: 14 feste Bildplätze mit
+  Galerie, Originalvergleich, Ersetzen, Ausschnitt und Zurücksetzen.
+- 11 Screensaver-Hintergründe, normales Startbild, Ausschaltbild und frühes
+  BREC-Startbild; Startphasen standardmäßig gekoppelt.
+- Statischer PNG-/JPEG-/WebP-Import mit Größenlimits, EXIF, sRGB und schwarzer
+  Alpha-Verrechnung. Zuschnitt, Einpassen, Verschieben, Zoom und 90°-Drehung.
+- Gemeinsamer Ressourcenkatalog und Farbtestvektoren; STY RGB565 LE, BREC BE.
+- Nur Pixel und erforderliche LFI-Prüfsummen ändern; Bootcode, Tabellen,
+  Übersetzungen, Dateigrößen und andere Ressourcen bleiben erhalten.
+- Geänderte BINs oder vollständiges bearbeitetes Firmwarepaket exportieren,
+  erneut öffnen und prüfen. Vorhandene Dateien werden nicht überschrieben.
+- Nur tatsächlich geänderte Bereiche über den vorhandenen Flasher übertragen;
+  Bildeditor schreibt kein MBREC. Beide BREC-Kopien werden zurückgelesen.
+- Explizites Laden vom Gerät speichert zuerst die unveränderte Originalsicherung.
+- Automatisierte Python-/JavaScript-/GUI-Tests, Vergleich beider Implementierungen
+  mit vorhandenen lokalen Dateien und Windows-EXE-Selbsttest ohne Gerätezugriff.
+  Die neue Funktion bleibt ein auf Hardware unverifizierter Build-Kandidat.
+
 ## 0.2.0-beta.2
 
 - Automatische Erkennung von MBREC, BREC und LFI nach Dateiinhalt, in Windows-App und Pages.

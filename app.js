@@ -5,9 +5,11 @@ import { validateBundle, sha256, assertSame } from './lib/formats.js';
 import { selectImages, selectionLabel, hasBoot } from './lib/images.js';
 import { packBackup, unpackBackup, importFolder } from './lib/archive.js';
 import { sessionFromLocation, bridgeRequest, pairHelper, saveSession } from './lib/bridge.js';
+import { ArtworkPanel } from './lib/artwork-ui.js';
 
 const $ = id => document.getElementById(id);
 let session = null, sessionError = null;
+let artwork = null;
 try { session = sessionFromLocation(location, sessionStorage); }
 catch (error) { sessionError = error; }
 history.replaceState(null, '', location.pathname);
@@ -45,9 +47,11 @@ function result(title, message, kind = '') {
   $('activity-message').textContent = message;
   $('progress').hidden = true;
   $('progress-text').textContent = '';
+  $('artwork-activity').textContent = `${title} ${message}`;
 }
 
 function progress(phase, done, total) {
+  $('artwork-activity').textContent = `${phase}${total ? ` · ${Math.round(done / total * 100)} %` : ''}`;
   $('activity-heading').textContent = phase;
   $('activity-message').textContent = 'Bitte den Player angeschlossen und diese Seite geöffnet lassen.';
   $('progress').hidden = false;
@@ -71,6 +75,7 @@ function updateControls() {
   $('connect').textContent = connected ? 'Trennen' : state.permissionNeeded ? 'USB-Zugriff erlauben' : 'Verbinden ↗';
   $('save-pending').hidden = !state.pendingBackup;
   $('save-pending').disabled = state.busy;
+  artwork?.update();
 }
 
 function deviceStatus(label, description, connected = false) {
@@ -277,15 +282,19 @@ $('verify').addEventListener('click', () => void run('Mit Gerät vergleichen', a
     compared.identical ? 'success' : 'warning');
 }));
 
-$('flash').addEventListener('click', () => void run('Firmware flashen', async () => {
-  const selected = state.firmware, label = selectionLabel(selected), boot = hasBoot(selected);
-  const description = `Erkannte Bereiche: ${label}. ${selected.components.brec ? 'BREC wird in beiden Bootkopien aktualisiert. ' : ''}` +
+$('flash').addEventListener('click', () => void run('Firmware flashen', () => flashSelected(state.firmware)));
+
+async function flashSelected(selected, changedLabels = []) {
+  const label = selectionLabel(selected), boot = hasBoot(selected);
+  const description = (changedLabels.length ? `Geänderte Bilder: ${changedLabels.join(', ')}. ` : '') +
+    `Erkannte Bereiche: ${label}. ${selected.components.brec ? 'BREC wird in beiden Bootkopien aktualisiert. ' : ''}` +
     'Zuerst wird die Rücksicherung gespeichert. Anschließend werden diese Bereiche geschrieben und vollständig zurückgelesen.';
   if (!await confirmAction(`${label} flashen?`, description)) {
     result('Abgebrochen', 'Es wurde nichts geschrieben.'); return;
   }
   const extension = boot ? '.zip' : '.bin', name = `x6-vor-flash-${stamp()}${boot ? '.x6backup.zip' : '.bin'}`;
   const handle = await savePicker(name, extension);
+  if (changedLabels.length && (await handle.getFile()).size) throw new Error('Die Rücksicherung benötigt einen neuen Dateinamen. Vorhandene Dateien bleiben erhalten.');
   const outcome = await operations().flashSelection(selected, async backup => {
     const data = boot ? packBackup(backup.files, backup.manifest) : backup;
     // Keep it recoverable in this session if a filesystem error interrupts saving.
@@ -296,10 +305,13 @@ $('flash').addEventListener('click', () => void run('Firmware flashen', async ()
   });
   result(`${label} geschrieben und verifiziert.`, outcome.normalMode ? 'Der Player ist wieder normal gestartet.' :
     'Der vollständige Rücklesevergleich war erfolgreich. Der normale Neustart ist noch nicht bestätigt.', outcome.normalMode ? 'success' : 'warning');
-}));
+}
 
-$('dump').addEventListener('click', () => void run('Sicherung erstellen', async () => {
+$('dump').addEventListener('click', () => void run('Sicherung erstellen', () => dumpAndSave()));
+
+async function dumpAndSave(forEditor = false) {
   const handle = await savePicker(`x6-sicherung-${stamp()}.x6backup.zip`, '.zip');
+  if (forEditor && (await handle.getFile()).size) throw new Error('Die Originalsicherung benötigt einen neuen Dateinamen.');
   const operation = operations(), backup = await operation.dump();
   const data = packBackup(backup.files, backup.manifest);
   state.pendingBackup = {data, name: `x6-${backup.manifest.status}-${stamp()}.x6backup.zip`, extension: '.zip'};
@@ -308,10 +320,12 @@ $('dump').addEventListener('click', () => void run('Sicherung erstellen', async 
   if (backup.manifest.status === 'complete') {
     const boot = await operation.reboot();
     result('Vollständige Sicherung gespeichert.', `Bootdatensätze und Firmware wurden gesichert.${boot.normalMode ? ' Der Player ist normal gestartet.' : ' Der Neustart ist noch nicht bestätigt.'}`, boot.normalMode ? 'success' : 'warning');
+    return {...backup.files, 'manifest.json': new TextEncoder().encode(JSON.stringify(backup.manifest))};
   } else {
     result('Unvollständige Sicherung gespeichert.', incompleteDumpMessage(backup.manifest), 'warning');
   }
-}));
+  return null;
+}
 
 $('restore').addEventListener('click', () => void run('Sicherung wiederherstellen', async () => {
   const emergency = !state.profile.boot_write_mapping_verified;
@@ -340,7 +354,7 @@ $('save-report').addEventListener('click', () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
-window.addEventListener('beforeunload', event => { if (state.busy || state.pendingBackup || state.job) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (state.busy || state.pendingBackup || state.job || artwork?.dirty) { event.preventDefault(); event.returnValue = ''; } });
 navigator.usb?.addEventListener('disconnect', event => {
   if (state.usb?.device !== event.device || state.expectedReset) return;
   state.usb.alive = false; state.driver = null;
@@ -354,11 +368,15 @@ navigator.usb?.addEventListener('disconnect', event => {
 async function init() {
   updateControls();
   try {
-    const [profileResponse, siteResponse] = await Promise.all([fetch('./tools/x6_profile.json'), fetch('./site.json')]);
-    if (!profileResponse.ok || !siteResponse.ok) throw new Error('Die Website konnte ihre Konfiguration nicht laden.');
+    const [profileResponse, siteResponse, artworkResponse] = await Promise.all([fetch('./tools/x6_profile.json'), fetch('./site.json'), fetch('./tools/x6_artwork.json')]);
+    if (!profileResponse.ok || !siteResponse.ok || !artworkResponse.ok) throw new Error('Die Website konnte ihre Konfiguration nicht laden.');
     state.profile = await profileResponse.json();
     const site = await siteResponse.json();
     state.site = site;
+    artwork = new ArtworkPanel(state.profile, await artworkResponse.json(), {
+      run, result, confirm: confirmAction, save: saveToHandle, savePicker, flash: flashSelected, dump: () => dumpAndSave(true),
+      busy: () => state.busy, connected: () => Boolean(state.driver && state.usb?.alive), selection: () => state.firmware,
+    });
     $('helper-download').href = site.helper_download;
     $('repository-link').href = site.repository;
     $('setup-note').hidden = Boolean(session);

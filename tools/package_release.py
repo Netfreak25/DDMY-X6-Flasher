@@ -52,9 +52,11 @@ def package() -> None:
     with zipfile.ZipFile(helper, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.write(output / "DDMY X6 Flasher.exe", "DDMY X6 Flasher.exe")
         archive.write(ROOT / "docs/BEDIENUNG.md", "Bedienung.md")
+        archive.write(ROOT / "docs/BILDEDITOR.md", "BILDEDITOR.md")
         archive.write(ROOT / "THIRD_PARTY.md", "THIRD_PARTY.md")
         archive.write(ROOT / "vendor/fflate.LICENSE", "licenses/fflate.txt")
         archive.write(ROOT / "vendor/libusb.LICENSE", "licenses/libusb.txt")
+        archive.write(ROOT / "vendor/Pillow.LICENSE", "licenses/Pillow.txt")
         archive.write(ROOT / "vendor/actions_flash/README.md", "licenses/Actions-Backend.md")
         python = Path(sys.base_prefix)
         for path, name in [(python / "LICENSE.txt", "Python.txt"),

@@ -1,15 +1,23 @@
 /** Real browser, mocked bridge and USB modules: these tests never contact hardware. */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { packBackup } from '../../lib/archive.js';
 import { profile, files as original, payload } from '../fixtures.js';
+import { artworkFixture, config as artworkConfig } from '../artwork-fixture.js';
+import { Artwork } from '../../lib/artwork.js';
 
 let server, browser, origin;
+const artworkData = await artworkFixture();
+artworkData.profile.runtime_sha256 = profile.runtime_sha256;
+const artworkModel = await Artwork.create(artworkData.selection, artworkData.profile, artworkConfig);
+artworkModel.replace('background-01', new Uint8Array(240 * 320 * 3).fill(255));
+const artworkFiles = await artworkModel.packageFiles();
+const artworkZip = packBackup(artworkFiles, JSON.parse(new TextDecoder().decode(artworkFiles['manifest.json'])));
 const zip = packBackup(original, JSON.parse(new TextDecoder().decode(original['manifest.json'])));
 
 before(async () => {
@@ -31,6 +39,22 @@ before(async () => {
   await writeFile('private_dumps/web-tests/synthetic.bin', original['lfi.bin']);
   await writeFile('private_dumps/web-tests/first.bin', original['mbrec.bin']);
   await writeFile('private_dumps/web-tests/second.bin', original['brec0.bin']);
+  await writeFile('private_dumps/web-tests/artwork.zip', artworkZip);
+  await writeFile('private_dumps/web-tests/artwork-lfi.bin', artworkFiles['lfi.bin']);
+  const pictures = spawnSync('python', ['-c', `
+from PIL import Image, ImageCms
+from pathlib import Path
+p=Path('private_dumps/web-tests')
+Image.new('RGBA',(4,2),(255,0,0,128)).save(p/'alpha.png')
+exif=Image.Exif(); exif[274]=6
+Image.new('RGB',(4,2),'red').save(p/'upright.jpg',exif=exif)
+icc=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
+Image.new('RGB',(3,2),'blue').save(p/'color.webp',lossless=True,icc_profile=icc)
+Image.new('RGB',(3,2),'blue').save(p/'lossy.webp')
+Image.new('RGB',(4,2),'red').save(p/'animated.png',save_all=True,append_images=[Image.new('RGB',(4,2),'blue')])
+(p/'broken.png').write_bytes(b'not an image')
+`], {encoding: 'utf8'});
+  assert.equal(pictures.status, 0, pictures.stderr);
 });
 
 after(async () => {
@@ -38,12 +62,12 @@ after(async () => {
   if (server && server.exitCode === null) {const stopped = once(server, 'exit'); server.kill(); await stopped;}
 });
 
-async function pageFixture(bootMapping = profile.boot_write_mapping_verified) {
+async function pageFixture(bootMapping = profile.boot_write_mapping_verified, assets = original, testProfile = profile) {
   const context = await browser.newContext({viewport: {width: 1280, height: 1120}, serviceWorkers: 'block'});
   const page = await context.newPage(), errors = [], apiCalls = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/tools/x6_profile.json', route => route.fulfill({
-    json: {...profile, boot_write_mapping_verified: bootMapping},
+    json: {...testProfile, boot_write_mapping_verified: bootMapping},
   }));
   let mode = 'normal';
   // Every API URL is fulfilled or aborted here; no status/ADFU request reaches Python.
@@ -62,7 +86,7 @@ async function pageFixture(bootMapping = profile.boot_write_mapping_verified) {
   });
   await page.route('**/test-file/*', route => {
     const name = new URL(route.request().url()).pathname.split('/').at(-1);
-    return route.fulfill({body: Buffer.from(original[name])});
+    return route.fulfill({body: Buffer.from(assets[name])});
   });
   await page.route('**/test-driver-pure.js', async route => route.fulfill({contentType: 'text/javascript',
     body: (await readFile('lib/driver.js', 'utf8')).replace("'./formats.js'", "'./lib/formats.js'")}));
@@ -76,7 +100,7 @@ async function pageFixture(bootMapping = profile.boot_write_mapping_verified) {
   `}));
   await page.route('**/lib/driver.js', route => route.fulfill({contentType: 'text/javascript', body: `
     export {bootLayout,brecLength,prepareBrecTransfer} from '/test-driver-pure.js';
-    const file=async name=>new Uint8Array(await (await fetch('/test-file/'+name)).arrayBuffer());
+    const file=async name=>window.__deviceFiles?.[name]?.slice()||new Uint8Array(await (await fetch('/test-file/'+name)).arrayBuffer());
     export class X6Driver{
       constructor(usb){this.usb=usb;}
       async bootstrap(){}
@@ -84,7 +108,7 @@ async function pageFixture(bootMapping = profile.boot_write_mapping_verified) {
       async flashDriver(){window.__calls.push('driver');}
       async readLfi(progress){window.__calls.push('read');await new Promise(r=>setTimeout(r,150));let data=await file('lfi.bin');progress?.(data.length,data.length);if(window.__mismatch)data[0]^=1;return data;}
       async readBoot(index){window.__calls.push('boot'+index);if(window.__badBoot&&index===0)throw Error('bad brec checksum');return index===0?{'mbrec.bin':await file('mbrec.bin'),'brec0.bin':await file('brec0.bin')}:{'mbrec_copy.bin':await file('mbrec_copy.bin'),'brec1.bin':await file('brec1.bin')};}
-      async writeArea(name){window.__calls.push(name);if(window.__writeFailure)throw Error('USB-Befehl nicht bestätigt.');}
+      async writeArea(name,data){window.__calls.push(name);if(window.__writeFailure)throw Error('USB-Befehl nicht bestätigt.');window.__deviceFiles||={};for(const key of ({lfi:['lfi.bin'],mbrec:['mbrec.bin','mbrec_copy.bin'],brec:['brec0.bin','brec1.bin']}[name]||[]))window.__deviceFiles[key]=data.slice();}
       async finalize(){window.__calls.push('final');}
       async reset(){window.__calls.push('reset');this.usb.alive=false;await fetch('/api/test-normal');}
     }
@@ -98,11 +122,16 @@ async function pageFixture(bootMapping = profile.boot_write_mapping_verified) {
       getDevices: async () => [], requestDevice: async () => ({vendorId: 0x10d6, productId: 0x10d6}),
       addEventListener: () => {},
     }});
-    window.showSaveFilePicker = async () => {
-      let data;
-      return {createWritable: async () => ({write: async value => {data = value; window.__calls.push('save');}, close: async () => {window.__saved.push(data.length);}, abort: async () => {}}),
-        getFile: async () => new Blob([data])};
+    window.__handles = {};
+    const makeHandle = name => {
+      let data = new Uint8Array();
+      const handle = {name, createWritable: async () => ({write: async value => {data = value; window.__calls.push('save');}, close: async () => {window.__saved.push(data.length);}, abort: async () => {}}),
+        getFile: async () => new window.File([data], name)};
+      window.__handles[name] = handle;
+      return handle;
     };
+    window.showSaveFilePicker = async options => makeHandle(options.suggestedName);
+    window.showDirectoryPicker = async () => ({getFileHandle: async name => makeHandle(name)});
   });
   await page.goto(`${origin}/#session=mock-session`);
   await page.waitForFunction(() => !document.querySelector('#connect').disabled);
@@ -388,5 +417,139 @@ test('an uncertain write displays the failure with no finalization or reset', as
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vorgang gestoppt');
   assert.deepEqual(await page.evaluate(() => window.__calls), ['read', 'save', 'driver', 'lfi']);
   assert.deepEqual(errors, []);
+  await context.close();
+});
+
+async function openArtwork(page, name = 'artwork.zip') {
+  await page.locator('#artwork-toggle').click();
+  await page.locator('#artwork-files').setInputFiles(`private_dumps/web-tests/${name}`);
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Bilder geladen.');
+}
+
+async function replaceArtwork(page, slot = 'startup', apply = true) {
+  await page.locator(`[data-slot="${slot}"]`).click();
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 320;
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = 'red'; ctx.fillRect(0, 0, 240, 320);
+    ctx.fillStyle = 'blue'; ctx.fillRect(240, 0, 240, 320); return canvas.toDataURL().split(',')[1];
+  });
+  await page.locator('#artwork-picture').setInputFiles({name: 'synthetic.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64')});
+  await page.locator('#artwork-crop').waitFor({state: 'visible'});
+  await page.locator('#crop-rotate').click();
+  await page.locator(apply ? '#crop-apply' : '#crop-cancel').click();
+}
+
+test('artwork gallery is offline, has 14 fixed slots, cancel/reset and protects unsaved edits', async () => {
+  const {page, context, errors, apiCalls} = await pageFixture(true, artworkFiles, artworkData.profile);
+  await openArtwork(page);
+  assert.equal(await page.locator('.artwork-tile').count(), 14);
+  assert.equal(await page.locator('#artwork-coupled').isChecked(), true);
+  await replaceArtwork(page, 'startup', false);
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
+  await replaceArtwork(page);
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 2);
+  assert.deepEqual(await page.evaluate(() => {
+    const pixel = id => [...document.getElementById(id).getContext('2d').getImageData(120, 0, 1, 1).data];
+    return [pixel('artwork-original'), pixel('artwork-preview')];
+  }), [[0, 0, 0, 255], [255, 0, 0, 255]]);
+  await page.locator('#artwork-files').setInputFiles('private_dumps/web-tests/artwork-lfi.bin');
+  await page.locator('#confirmation button[value=cancel]').click();
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 2);
+  await page.screenshot({path: 'private_dumps/web-tests/artwork-desktop.png', fullPage: true});
+  await page.setViewportSize({width: 390, height: 844});
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  await page.screenshot({path: 'private_dumps/web-tests/artwork-mobile.png', fullPage: true});
+  await page.locator('#artwork-reset').click();
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
+  assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('artwork saves/reopens paired BINs and complete package without hardware; source overwrite blocked', async () => {
+  const {page, context, errors, apiCalls} = await pageFixture(true, artworkFiles, artworkData.profile);
+  await openArtwork(page); await replaceArtwork(page);
+  await page.locator('#artwork-save').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Bearbeitete BINs gespeichert.');
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.__handles)), ['x6-bilder-brec.bin', 'x6-bilder-lfi.bin']);
+  await page.locator('#artwork-package').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Bearbeitetes Firmwarepaket gespeichert.');
+  const saved = await page.evaluate(async () => {
+    const {unpackBackup} = await import('./lib/archive.js'), {validateBundle} = await import('./lib/formats.js');
+    const profile = await (await fetch('./tools/x6_profile.json')).json();
+    const file = await window.__handles['x6-bilder.x6backup.zip'].getFile();
+    return validateBundle(unpackBackup(new Uint8Array(await file.arrayBuffer()), profile), profile);
+  });
+  assert.equal(saved.kind, 'edited-firmware'); assert.deepEqual(saved.edited_images, ['startup', 'boot-startup']);
+  await page.evaluate(() => { window.showSaveFilePicker = async () => window.__handles['x6-bilder.x6backup.zip']; });
+  await page.locator('#artwork-package').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vorgang gestoppt');
+  assert.match(await page.locator('#activity-message').textContent(), /nicht überschrieben/);
+  assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('LFI-only editing marks early startup missing and exports only LFI', async () => {
+  const {page, context, errors, apiCalls} = await pageFixture(true, artworkFiles, artworkData.profile);
+  await openArtwork(page, 'artwork-lfi.bin');
+  assert.equal(await page.locator('[data-slot="boot-startup"]').isDisabled(), true);
+  assert.equal(await page.locator('#artwork-coupled').isDisabled(), true);
+  await replaceArtwork(page);
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 1);
+  assert.equal(await page.locator('#artwork-package').isDisabled(), true);
+  await page.locator('#artwork-save').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Bearbeitete BINs gespeichert.');
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.__handles)), ['x6-bilder-lfi.bin']);
+  assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('editor flashes exactly BREC plus LFI, confirms images and reads both boot copies', async () => {
+  const {page, context, errors} = await pageFixture(true, artworkFiles, artworkData.profile);
+  await openArtwork(page); await replaceArtwork(page); await connect(page);
+  await page.evaluate(() => {window.__calls = [];});
+  await page.locator('#artwork-flash').click();
+  await page.locator('#confirmation').waitFor({state: 'visible'});
+  assert.match(await page.locator('#confirm-description').textContent(), /Startbild.*Frühes Startbild/);
+  assert.match(await page.locator('#confirm-title').textContent(), /BREC \+ LFI/);
+  await page.locator('#confirm-go').click();
+  await page.waitForFunction(() => ['BREC + LFI geschrieben und verifiziert.', 'Vorgang gestoppt'].includes(document.querySelector('#activity-heading').textContent));
+  assert.equal(await page.locator('#activity-heading').textContent(), 'BREC + LFI geschrieben und verifiziert.', await page.locator('#activity-message').textContent());
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['read', 'boot0', 'boot1', 'save', 'driver', 'brec', 'lfi', 'final', 'read', 'boot0', 'boot1', 'reset']);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('load from simulated device saves immutable original before populating the editor', async () => {
+  const {page, context, errors} = await pageFixture(true, artworkFiles, artworkData.profile);
+  await page.locator('#artwork-toggle').click(); await connect(page);
+  await page.locator('#artwork-device').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Bilder geladen.');
+  await page.waitForFunction(() => !document.querySelector('[data-slot="startup"]').disabled);
+  assert.equal(await page.locator('.artwork-tile:not(:disabled)').count(), 14);
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['read', 'boot0', 'boot1', 'save', 'reset']);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('browser import applies EXIF, alpha and sRGB; accepts both WebP codecs and rejects animation/corruption', async () => {
+  const {page, context, errors, apiCalls} = await pageFixture();
+  const results = await page.evaluate(async () => {
+    const {importPicture} = await import('./lib/picture.js');
+    const config = await (await fetch('./tools/x6_artwork.json')).json(), results = {};
+    for (const name of ['alpha.png', 'upright.jpg', 'color.webp', 'lossy.webp', 'animated.png', 'broken.png']) {
+      try {
+        const image = await importPicture(await (await fetch('./private_dumps/web-tests/' + name)).blob(), config);
+        results[name] = {size: [image.width, image.height], pixel: [...image.getContext('2d').getImageData(0, 0, 1, 1).data]};
+      } catch (error) { results[name] = {error: error.message}; }
+    }
+    return results;
+  });
+  assert.deepEqual(results['alpha.png'], {size: [4, 2], pixel: [128, 0, 0, 255]});
+  assert.deepEqual(results['upright.jpg'].size, [2, 4]);
+  assert.deepEqual(results['color.webp'], {size: [3, 2], pixel: [0, 0, 255, 255]});
+  assert.deepEqual(results['lossy.webp'].size, [3, 2]);
+  assert.match(results['animated.png'].error, /Animierte/); assert.match(results['broken.png'].error, /gültiges/);
+  assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
   await context.close();
 });

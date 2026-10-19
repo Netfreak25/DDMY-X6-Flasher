@@ -37,6 +37,31 @@
       <article class="action-card"><span class="card-icon" aria-hidden="true">⇄</span><h2>Mit Gerät vergleichen</h2><p>Die ausgewählte Firmware Byte für Byte mit dem Inhalt deines Players vergleichen.</p><button id="verify" class="secondary" data-control disabled>Vergleichen <span aria-hidden="true">→</span></button><small>Kein Schreiben in den Flash</small></article>
     </section>
 
+    <section class="artwork-section" aria-labelledby="artwork-heading">
+      <div class="artwork-heading"><div><p class="eyebrow">DEIN DESIGN</p><h2 id="artwork-heading">Bilder bearbeiten</h2><p>11 Hintergründe und die Start- und Ausschaltbilder anpassen — auch ohne Player.</p></div><button id="artwork-toggle" class="secondary" data-control aria-expanded="false" aria-controls="artwork-panel">Bildeditor öffnen</button></div>
+      <div id="artwork-panel" hidden>
+        <div class="artwork-toolbar">
+          <label class="file-button">Dateien öffnen<input id="artwork-files" type="file" accept=".bin,.zip" multiple data-art-control></label>
+          <label class="file-button">Ordner öffnen<input id="artwork-folder" type="file" webkitdirectory multiple data-art-control></label>
+          <button id="artwork-use-selection" class="secondary" data-art-control>Firmwareauswahl übernehmen</button>
+          <button id="artwork-device" class="secondary" data-art-control>Vom Gerät laden</button>
+        </div>
+        <p id="artwork-info">LFI und BREC gemeinsam oder eine vollständige Sicherung öffnen. Die Quelldateien bleiben unverändert.</p>
+        <label class="coupling"><input id="artwork-coupled" type="checkbox" data-art-control> Startbilder gemeinsam ändern</label>
+        <div class="artwork-workspace">
+          <div id="artwork-gallery" class="artwork-gallery" aria-label="14 feste Bildplätze"></div>
+          <div class="artwork-detail"><h3 id="artwork-title">Bildplatz auswählen</h3>
+            <div class="artwork-previews"><figure><canvas id="artwork-original" width="240" height="320"></canvas><figcaption>Original</figcaption></figure><figure><canvas id="artwork-preview" width="240" height="320"></canvas><figcaption>Ergebnis · RGB565</figcaption></figure></div>
+            <div class="artwork-toolbar"><button id="artwork-replace" class="secondary" data-art-control>Ersetzen</button><button id="artwork-edit" class="secondary" data-art-control>Bearbeiten</button><button id="artwork-reset" class="quiet" data-art-control>Änderung zurücksetzen</button></div>
+            <input id="artwork-picture" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+            <p class="artwork-hint">240 × 320 · RGB565<br>Statisches PNG, JPEG oder WebP · bis 25 MiB / 40 MP<br>14 feste Plätze. Keine Bilder hinzufügen oder löschen.</p>
+          </div>
+        </div>
+        <div class="artwork-toolbar artwork-export"><button id="artwork-save" class="secondary" data-art-control>Geänderte BINs speichern</button><button id="artwork-package" class="secondary" data-art-control>Firmwarepaket speichern</button><button id="artwork-flash" class="primary" data-art-control>Änderungen flashen</button></div>
+        <p id="artwork-activity" class="artwork-hint" aria-live="polite"></p>
+      </div>
+    </section>
+
     <section id="activity" class="activity" aria-labelledby="activity-heading" aria-live="polite">
       <div class="activity-top"><div><p class="eyebrow">AKTUELLER VORGANG</p><h2 id="activity-heading">Bereit, wenn du es bist.</h2></div><span id="progress-text"></span></div>
       <progress id="progress" max="100" value="0" hidden aria-label="Fortschritt"></progress>
@@ -47,5 +72,17 @@
     <footer><a id="repository-link" href="https://github.com/Netfreak25/DDMY-X6-Flasher">Projekt &amp; Anleitung ↗</a><span>Windows · Chrome / Edge · WebUSB</span></footer>
   </main>
   <dialog id="confirmation"><form method="dialog"><p class="eyebrow">BITTE BESTÄTIGEN</p><h2 id="confirm-title"></h2><p id="confirm-description"></p><label id="emergency-option" class="emergency" hidden><input id="emergency-check" type="checkbox">Notfall-Wiederherstellung aktivieren</label><div class="dialog-actions"><button value="cancel" class="secondary">Abbrechen</button><button id="confirm-go" value="confirm" class="primary">Starten</button></div></form></dialog>
+  <dialog id="artwork-crop" aria-labelledby="crop-heading">
+    <h2 id="crop-heading">Bildausschnitt bearbeiten</h2><p>Vorschau aus RGB565 · Ziehen verschiebt das Bild</p>
+    <div class="crop-body"><canvas id="crop-preview" width="240" height="320"></canvas><div class="crop-controls">
+      <label>Bildformat<select id="crop-mode"><option value="cover">Bildfüllend zuschneiden</option><option value="contain">Einpassen · schwarze Ränder</option></select></label>
+      <button id="crop-rotate" class="secondary">90° nach rechts drehen</button>
+      <label>Zoom<input id="crop-zoom" type="range" min="1" max="4" step="0.01" value="1"></label>
+      <label>Links / rechts<input id="crop-x" type="range" min="-1" max="1" step="0.01" value="0"></label>
+      <label>Oben / unten<input id="crop-y" type="range" min="-1" max="1" step="0.01" value="0"></label>
+      <button id="crop-reset" class="quiet">Ausschnitt zurücksetzen</button>
+    </div></div>
+    <div class="dialog-actions"><button id="crop-cancel" class="secondary">Abbrechen</button><button id="crop-apply" class="primary">Übernehmen</button></div>
+  </dialog>
 </body>
 </html>

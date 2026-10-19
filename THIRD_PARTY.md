@@ -31,6 +31,18 @@ Ab Beta 7 wartet er vor den Ausschaltwerten auf das Entfernen der USB-Stromverso
 und bedient dabei den Watchdog.
 Unicorn wird ausschließlich für den ARM-Emulatortest verwendet und nicht mitgeliefert.
 
+## Pillow
+
+Der native Bildeditor verwendet Pillow 12.3.0 für statischen PNG-/JPEG-/WebP-Import,
+EXIF-Ausrichtung, sRGB-Konvertierung und Bildvorschauen. Pillow und seine
+mitgelieferten Bildbibliotheken sind in der Windows-App gebündelt. Die vollständigen
+Lizenzhinweise liegen in [vendor/Pillow.LICENSE](vendor/Pillow.LICENSE) und im
+Windows-ZIP unter `licenses/Pillow.txt`. Die Entwicklungsabhängigkeit steht in
+`tools/requirements.txt`.
+
+Die Website verwendet ihre lokale Browser-Bilddekodierung und Canvas; Bilder
+werden nicht an die Windows-App oder einen Server gesendet.
+
 ## Windows-Paket
 
 Ab 0.2.0 enthält die native App zusätzlich das bestehende Actions-Backend

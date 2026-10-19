@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "width": 240,
+  "height": 320,
+  "pixel_bytes": 153600,
+  "max_input_bytes": 26214400,
+  "max_input_pixels": 40000000,
+  "max_zoom": 4,
+  "sty": {"magic": 422794578, "count_offset": 20, "table_offset": 1024, "record_size": 16, "format": 2},
+  "brec": {"descriptor_magic": [82, 69, 83, 25], "code_sectors": 92, "total_sectors": 393},
+  "startup_ids": ["startup", "boot-startup"],
+  "slots": [
+    {"id": "background-01", "label": "Hintergrund 1", "area": "lfi", "file": "COMMON.STY", "index": 298, "endian": "little"},
+    {"id": "background-02", "label": "Hintergrund 2", "area": "lfi", "file": "COMMON.STY", "index": 299, "endian": "little"},
+    {"id": "background-03", "label": "Hintergrund 3", "area": "lfi", "file": "COMMON.STY", "index": 300, "endian": "little"},
+    {"id": "background-04", "label": "Hintergrund 4", "area": "lfi", "file": "COMMON.STY", "index": 301, "endian": "little"},
+    {"id": "background-05", "label": "Hintergrund 5", "area": "lfi", "file": "COMMON.STY", "index": 302, "endian": "little"},
+    {"id": "background-06", "label": "Hintergrund 6", "area": "lfi", "file": "COMMON.STY", "index": 303, "endian": "little"},
+    {"id": "background-07", "label": "Hintergrund 7", "area": "lfi", "file": "COMMON.STY", "index": 304, "endian": "little"},
+    {"id": "background-08", "label": "Hintergrund 8", "area": "lfi", "file": "COMMON.STY", "index": 305, "endian": "little"},
+    {"id": "background-09", "label": "Hintergrund 9", "area": "lfi", "file": "COMMON.STY", "index": 306, "endian": "little"},
+    {"id": "background-10", "label": "Hintergrund 10", "area": "lfi", "file": "COMMON.STY", "index": 307, "endian": "little"},
+    {"id": "background-11", "label": "Hintergrund 11", "area": "lfi", "file": "COMMON.STY", "index": 308, "endian": "little"},
+    {"id": "startup", "label": "Startbild", "area": "lfi", "file": "LOGO.STY", "index": 0, "endian": "little"},
+    {"id": "shutdown", "label": "Ausschaltbild", "area": "lfi", "file": "END.STY", "index": 0, "endian": "little"},
+    {"id": "boot-startup", "label": "Frühes Startbild (beide Bootkopien)", "area": "brec", "endian": "big"}
+  ]
+}

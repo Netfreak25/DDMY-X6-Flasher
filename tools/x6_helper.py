@@ -71,6 +71,10 @@ class HelperWindow:
         self.device_controls = []
         self.thread = None
         self.poll_id = None
+        self.artwork_window = None
+        self.completion = None
+        self.job_result = None
+        self.device_job = True
         if server:
             self.thread = threading.Thread(target=server.serve_forever, daemon=True)
             self.thread.start()
@@ -111,6 +115,8 @@ class HelperWindow:
         self.flash_button.pack(side="left", padx=(0, 8))
         self.compare_button = self.button(row, "Mit Gerät vergleichen", self.compare, device=True)
         self.compare_button.pack(side="left")
+        self.artwork_button = self.button(row, "Bilder bearbeiten", self.open_artwork)
+        self.artwork_button.pack(side="left", padx=(8, 0))
         self.label(firmware, "MBREC, BREC, LFI · einzeln, mehrere BINs oder ein vollständiges ZIP-Paket.",
                    background="white").pack(anchor="w", pady=(5, 0))
 
@@ -202,6 +208,19 @@ class HelperWindow:
             self.pending_button.pack_forget()
             self.progress.pack(fill="x", pady=(10, 4))
             self.progress_label.pack(anchor="w")
+        if self.artwork_window:
+            self.artwork_window.update_controls()
+
+    def open_artwork(self):
+        """Create the offline editor lazily; opening it never probes the device."""
+        from x6_artwork_ui import ArtworkWindow
+
+        if self.artwork_window:
+            self.artwork_window.window.lift()
+        else:
+            self.artwork_window = ArtworkWindow(self)
+            if self.operations.selection:
+                self.artwork_window.load_selection(self.operations.selection)
 
     def choose_firmware(self):
         selected = filedialog.askopenfilenames(parent=self.root, title="X6-Firmware auswählen (Mehrfachauswahl möglich)",
@@ -210,7 +229,7 @@ class HelperWindow:
             sources = tuple(Path(path) for path in selected)
             self.firmware.set("Dateien werden geprüft …")
             self.operations.selection = None
-            self.start("Dateien erkennen und prüfen", lambda: self.operations.inspect(sources))
+            self.start("Dateien erkennen und prüfen", lambda: self.operations.inspect(sources), device=False)
 
     def choose_backup(self):
         selected = filedialog.askopenfilename(parent=self.root, title="X6-Sicherung auswählen", filetypes=[("X6-Sicherung", "*.zip")])
@@ -244,12 +263,14 @@ class HelperWindow:
             return
         self.start("Mit Gerät vergleichen", lambda: self.operations.compare_selection(selection))
 
-    def flash(self):
-        selection = self.operations.selection
+    def flash(self, selection=None, changed_labels=None):
+        selection = selection or self.operations.selection
         if selection is None:
             self.choose_firmware()
             return
         description = f"Erkannte Bereiche: {selection.label}\n"
+        if changed_labels:
+            description += "Geänderte Bilder: " + ", ".join(changed_labels) + "\n"
         if "brec" in selection.areas:
             description += "BREC wird in beiden Bootkopien aktualisiert.\n"
         description += "Zuerst Rücksicherung speichern, dann diese Bereiche schreiben und vollständig zurücklesen."
@@ -260,6 +281,9 @@ class HelperWindow:
                                                   defaultextension=extension, initialfile="x6-vor-flash" + extension,
                                                   filetypes=[("X6-Sicherung", "*.zip" if selection.has_boot else "*.bin")])
         if destination:
+            if changed_labels and Path(destination).exists():
+                messagebox.showerror("Neuen Namen wählen", "Die Rücksicherung benötigt einen neuen Dateinamen. Vorhandene Dateien bleiben erhalten.", parent=self.root)
+                return
             self.start(f"{selection.label} flashen", lambda: self.operations.flash_selection(selection, Path(destination)))
 
     def restore(self):
@@ -287,16 +311,17 @@ class HelperWindow:
         if destination:
             self.start("Sicherung speichern", lambda: self.operations.save_pending(Path(destination)))
 
-    def start(self, title: str, action) -> None:
+    def start(self, title: str, action, *, device=True, on_result=None) -> None:
         """Acquire before spawning: double clicks cannot create competing workers."""
         if self.busy:
             return
         try:
-            token = self.jobs.acquire("Windows-App")
+            token = self.jobs.acquire("Windows-App") if device else None
         except toolkit.ToolkitError as error:
             messagebox.showinfo("X6 wird verwendet", str(error), parent=self.root)
             return
         self.busy = True
+        self.device_job, self.completion, self.job_result = device, on_result, None
         self.report = [{"event": "start", "action": title}]
         self.activity.set(title)
         self.progress.configure(mode="indeterminate")
@@ -316,7 +341,8 @@ class HelperWindow:
                         event["log_error"] = str(log_error)
                 self.events.put(event)
             finally:
-                self.jobs.release(token)
+                if token is not None:
+                    self.jobs.release(token)
                 self.events.put({"event": "finished"})
 
         self.worker = threading.Thread(target=work, daemon=True)
@@ -346,6 +372,7 @@ class HelperWindow:
                     self.progress.configure(mode="determinate", maximum=total, value=done)
                     self.progress_text.set(f"{done / total:.0%} · bestätigte Sektoren")
             elif kind == "result":
+                self.job_result = event
                 self.activity.set(event["message"])
                 if event.get("selection_ready"):
                     selected = self.operations.selection
@@ -356,8 +383,9 @@ class HelperWindow:
                 else:
                     self.status.set("Vorgang beendet" if not event.get("warning") else "Vorgang beendet · Hinweis beachten")
             elif kind == "failure":
-                self.connected = False
-                self.status.set("Vorgang gestoppt · erneut verbinden")
+                if self.device_job:
+                    self.connected = False
+                self.status.set("Vorgang gestoppt · erneut verbinden" if self.device_job else "Dateivorgang gestoppt")
                 self.activity.set(event["error"])
             elif kind == "finished":
                 self.busy = False
@@ -365,7 +393,11 @@ class HelperWindow:
                 self.progress.configure(value=0)
                 self.progress_text.set("")
                 self.update_controls()
-        if self.busy:
+                callback, completed = self.completion, self.job_result
+                self.completion, self.job_result = None, None
+                if callback and completed:
+                    callback(completed)
+        if self.busy and self.poll_id is None:
             self.poll_id = self.root.after(UI_POLL_MS, self.poll)
 
     def details(self):
@@ -395,6 +427,8 @@ class HelperWindow:
     def close(self):
         if self.busy or self.jobs.owner:
             messagebox.showinfo("X6 wird verwendet", "Bitte den laufenden Auftrag beenden und in GitHub Pages zuerst trennen.", parent=self.root)
+            return
+        if self.artwork_window and not self.artwork_window.close():
             return
         if self.poll_id:
             self.root.after_cancel(self.poll_id)
@@ -427,10 +461,33 @@ def self_test(window: HelperWindow, profile: toolkit.Profile, runtime: Path) -> 
                and button.winfo_height() >= button.winfo_reqheight()
                and button.winfo_width() >= button.winfo_reqwidth()
                for button in window.controls if button.winfo_ismapped())
+    # Exercise bundled Pillow, the shared catalog and the real editor widgets.
+    import io
+
+    import x6_artwork as artwork
+    import x6_picture as picture
+    from PIL import Image
+
+    checked_formats = []
+    for format_name in ("PNG", "JPEG", "WEBP"):
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 2), "red").save(buffer, format=format_name)
+        path = log.directory / ("image-self-test." + format_name.lower())
+        path.write_bytes(buffer.getvalue())
+        if picture.import_picture(path).size != (4, 2):
+            raise toolkit.ToolkitError("Bilddecoder-Selbsttest fehlgeschlagen.")
+        checked_formats.append(format_name)
+    window.open_artwork()
+    editor = window.artwork_window
+    editor.window.geometry("+10000+10000")
+    editor.window.update()
+    slots = len(editor.tiles)
+    editor.close()
     return {"ok": all(icons) and fits, "window_icons": icons, "http_pairing": http_checks,
             "controls": [button.cget("text") for button in window.controls], "buttons_fit": fits,
             "poweroff_payload_size": len(payload), "backend_hashes_checked": True,
             "device_access": False, "browser_started": False,
+            "artwork_slots": slots if len(artwork.catalog()["slots"]) == slots else 0, "artwork_formats": checked_formats,
             "workspace_outside_resources": not toolkit.PRIVATE_ROOT.is_relative_to(toolkit.ROOT)}
 
 
