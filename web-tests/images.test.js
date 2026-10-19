@@ -65,6 +65,24 @@ test('content detection accepts all seven combinations and writes only those are
   }
 });
 
+test('optional backup skips full preread and saving for all seven combinations, preserving verification', async () => {
+  for (let mask = 1; mask < 8; mask++) {
+    const f = fixture(), areas = Object.keys(AREA_FILES).filter((_, index) => mask & (1 << index));
+    const selected = await selectImages(areas.map(area => source(inputs[area])), profile);
+    const result = await f.operations.flashSelection(selected, () => assert.fail('Backup was disabled'), {backup: false});
+    assert.equal(result.normalMode, true);
+    assert.deepEqual(f.calls.filter(call => call.startsWith('write-')), areas.map(area => `write-${area}`));
+    const beforeWrite = f.calls.slice(0, f.calls.indexOf(`write-${areas[0]}`));
+    assert.ok(!beforeWrite.includes('read-lfi'));
+    assert.equal(f.calls.filter(call => call === 'read-header').length, Number(areas.includes('lfi')));
+    assert.equal(f.calls.filter(call => call === 'read-lfi').length, Number(areas.includes('lfi')));
+    assert.equal(f.calls.at(-1), 'reset');
+    for (const [area, names] of Object.entries(AREA_FILES)) for (const name of names) {
+      assert.deepEqual(f.current[name], areas.includes(area) ? inputs[area] : files[name]);
+    }
+  }
+});
+
 test('identical duplicate copies and complete ZIPs merge; conflicting copies and damaged files stop offline', async () => {
   const selected = await selectImages([source(files['brec0.bin'], 'lfi.bin'), source(files['brec1.bin'])], profile);
   assert.deepEqual(Object.keys(selected.components), ['brec']);

@@ -19,7 +19,7 @@ unserer WebUSB-Seite bereit.
 | --- | --- |
 | Sicherung erstellen | MBREC, MBREC-Kopie, BREC 0, BREC 1 und vollständiges LFI als kompatibles `.x6backup.zip` speichern. |
 | Sicherung wiederherstellen | ZIP oder Toolkit-Ordner prüfen, MBREC → BREC → LFI schreiben, abschließen und alle fünf Dateien zurücklesen. |
-| Auswahl flashen | MBREC, BREC und LFI am Inhalt erkennen: einzeln, beliebig kombiniert oder als vollständiges ZIP-Paket. Vorher Rücksicherung speichern, danach vollständig zurücklesen. |
+| Auswahl flashen | MBREC, BREC und LFI am Inhalt erkennen: einzeln, beliebig kombiniert oder als vollständiges ZIP-Paket. Backup per Checkbox optional (voreingestellt an), danach vollständig zurücklesen. |
 | Mit Gerät vergleichen | Alle ausgewählten Bereiche byteweise vergleichen, bei BREC beide Kopien. Beschädigtes Geräte-LFI bleibt vergleichbar. |
 | ADFU betreten / verlassen | Den Wartungsmodus direkt in der App wechseln; Erfolg erst nach erkannter USB-Anmeldung melden. |
 | Player ausschalten | Eigenen RAM-Code laden und zurücklesen. Nach Startbestätigung USB abziehen; der Code wartet darauf. |

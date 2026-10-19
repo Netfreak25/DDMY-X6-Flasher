@@ -133,6 +133,43 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(result["files"], 148)
         self.assertEqual(result["sha256"], hashlib.sha256(self.image).hexdigest())
 
+    def test_optional_backup_skips_full_preread_but_keeps_verification_for_all_selections(self):
+        paths = self.changed_candidates()
+        original = self.files.copy()
+        for mask in range(1, 8):
+            with self.subTest(mask=mask):
+                self.files, self.device_image, self.calls = original.copy(), self.image, []
+                areas = [area for index, area in enumerate(images.AREA_FILES) if mask & (1 << index)]
+                self.ops.inspect(tuple(paths[area] for area in areas))
+                with self.simulated(), mock.patch.object(archive, "export_backup") as export:
+                    result = self.ops.flash_selection(self.ops.selection, None)
+                self.assertTrue(result["normal_mode"])
+                export.assert_not_called()
+                self.assertNotIn("read_before", self.calls)
+                self.assertEqual(self.calls.count("read_header"), int("lfi" in areas))
+                self.assertEqual(self.calls.count("read_after"), int("lfi" in areas))
+                self.assertEqual(self.calls[-1], "reset")
+                self.assertEqual([x for x in self.calls if x.startswith("write_")], [f"write_{a}" for a in areas])
+
+    def test_without_backup_invalid_or_short_device_header_stops_before_writing(self):
+        for short in (False, True):
+            self.calls = []
+
+            def run(backend, name, *args, short=short, **kwargs):
+                result = self.backend(backend, name, *args, **kwargs)
+                if name == "read_header":
+                    data = bytearray(Path(args[-1]).read_bytes())
+                    if short:
+                        del data[-1:]
+                    else:
+                        data[self.profile.protocol["preserve_header_ranges"][0][0]] ^= 1
+                    Path(args[-1]).write_bytes(data)
+                return result
+
+            with self.simulated(run), self.assertRaises(toolkit.ToolkitError):
+                self.ops.flash(self.source / "lfi.bin", None)
+            self.assertFalse(any(x.startswith("write_") for x in self.calls))
+
     def changed_candidates(self):
         paths = {}
         for area, offset in (("mbrec", 0x100), ("brec", 0x11000), ("lfi", len(self.image) - 1)):

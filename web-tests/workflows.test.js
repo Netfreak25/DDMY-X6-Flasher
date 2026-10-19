@@ -26,6 +26,22 @@ test('flash saves first, writes once, finalizes, verifies the whole LFI and then
   assert.deepEqual(calls, ['read', 'saved', 'driver', 'lfi', 'final', 'read', 'reset']);
 });
 
+test('optional backup skips saving and full preread but retains header and full readback checks', async () => {
+  const {operations, calls} = fixture();
+  await operations.flash(files['lfi.bin'], async () => {throw Error('must not save');}, {backup: false});
+  assert.deepEqual(calls, ['header', 'driver', 'lfi', 'final', 'read', 'reset']);
+  for (const short of [true, false]) {
+    const f = fixture();
+    f.driver.readLfiHeader = async () => {
+      const data = files['lfi.bin'].slice(0, profile.sector_size - Number(short));
+      if (!short) data[profile.protocol.preserve_header_ranges[0][0]] ^= 1;
+      return data;
+    };
+    await assert.rejects(f.operations.flash(files['lfi.bin'], null, {backup: false}), /Header/);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
 test('cancelled save and uncertain write cannot cause any subsequent write/finalize/reset', async () => {
   let f = fixture();
   await assert.rejects(f.operations.flash(files['lfi.bin'], async () => false), /gespeichert/);

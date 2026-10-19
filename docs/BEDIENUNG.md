@@ -65,6 +65,7 @@ Ohne Sicherung entfällt der vollständige Vorabdump. Vor einem LFI-Schreiben wi
 nur der 512-Byte-Geräteheader verglichen. Bei Bootänderungen bleiben die kleinen
 Leseprüfungen für Geometrie und unveränderte Bootkopien erforderlich.
 Das vollständige Rücklesen nach dem Schreiben bleibt in beiden Fällen aktiv.
+Diese Auswahl gilt auch für **Änderungen flashen** im Bildeditor.
 
 Die Windows-App zeigt bei Warteschritten einen statischen Hinweis. Prozentwerte
 erscheinen nur bei bestätigtem Schreibfortschritt; keine Endlosanimation beim Neustart.
