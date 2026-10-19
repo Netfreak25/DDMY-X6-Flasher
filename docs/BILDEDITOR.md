@@ -1,6 +1,6 @@
 # Bilder bearbeiten · Windows und Web
 
-Der Bildeditor in **v0.3.0-beta.4 (lokaler Build)** ersetzt vorhandene Bilder in deinen eigenen
+Der Bildeditor in **v0.3.0-beta.5 (lokaler Build)** ersetzt vorhandene Bilder in deinen eigenen
 Firmwaredateien. Er liefert keine Firmware oder Bildsammlung mit. Bearbeiten
 und Speichern benötigen weder Player noch Windows-Helfer auf der Website.
 
@@ -69,7 +69,7 @@ der Kopplung allein verändert noch kein Bild.
 
 ## Automatische Hintergrundaufbereitung
 
-Bei erkanntem Kontur-Zeichenpfad `v4-native-contour` erhalten die elf
+Bei erkanntem Kontur-Zeichenpfad `v5-bank-local-contour` erhalten die elf
 Bildschirmschoner-Hintergründe nach Ausschnitt und Drehung einen dezenten,
 an Bildschirmkoordinaten gebundenen Helligkeitsverlauf. Vorschau und Export
 verwenden dieselben RGB565-Pixel. Uhr, Datum und Kontur zeichnet der Player;

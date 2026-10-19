@@ -36,6 +36,7 @@ class ScreensaverTests(unittest.TestCase):
         self.assertFalse(saver.supported(b"xxxxpicture", entries, profile))
         self.assertFalse(saver.supported(b"codepicture", {}, profile))
         self.assertFalse(saver.supported(b"codepicture", entries, {**profile, "revision": "future"}))
+        self.assertFalse(saver.supported(b"codepicture", entries, {**profile, "revision": "v4-native-contour"}))
 
     def test_import_preview_reset_export_and_legacy(self):
         fixture = fixtures.ArtworkTests()

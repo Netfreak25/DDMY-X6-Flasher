@@ -134,10 +134,16 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.3.0-beta.4 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
+**v0.3.0-beta.5 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
 Neu: automatische Hintergrundaufbereitung bei erkannter Kontur-Firmware in
 Windows und Web. Die Downloadlinks zeigen weiterhin auf die veröffentlichte
-beta.3; beta.4 wurde nicht veröffentlicht.
+beta.3; beta.4 und beta.5 wurden nicht veröffentlicht.
+
+beta.5 erkennt ausschliesslich den korrigierten Konturpfad
+`v5-bank-local-contour`. Der v4-Firmwarekandidat wurde nach dem Bericht ueber
+blinkende Schrift und ausbleibenden Bildwechsel zurueckgezogen. Die App
+repariert keinen Firmwarecode und flasht nicht automatisch; unbekannte und
+aeltere Images behalten das bisherige Verhalten bei der Bildbearbeitung.
 Automatisierte Tests prüfen native Abläufe, ZIP-Austausch mit JavaScript,
 fehlende Bestätigungen, Zeitüberschreitungen, Rücklesefehler, GUI, HTTP-Grenzen
 und simuliertes WebUSB. Alle sieben Bereichskombinationen werden mit simulierten

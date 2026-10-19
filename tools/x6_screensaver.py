@@ -6,7 +6,7 @@ import hashlib
 import struct
 from itertools import pairwise
 
-REVISION = "v4-native-contour"
+REVISION = "v5-bank-local-contour"
 MAXIMA = (31, 63, 31)
 
 

@@ -28,6 +28,7 @@ test('recognition is independent of images and rejects unknown code', async () =
   const policy = {revision: REVISION, supported_code: {'MAINMENU.AP': await sha256(data.subarray(0, 4))}};
   const entries = new Map([['MAINMENU.AP', {offset: 0, size: 4}]]);
   assert.equal(await supported(data, entries, policy), true);
+  assert.equal(await supported(data, entries, {...policy, revision: 'v4-native-contour'}), false);
   data[5] ^= 255; assert.equal(await supported(data, entries, policy), true);
   data[0] ^= 255; assert.equal(await supported(data, entries, policy), false);
   assert.equal(await supported(data, new Map(), policy), false);

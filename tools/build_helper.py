@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import build_poweroff
+import x6_screensaver as screensaver
 import x6_toolkit as toolkit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,7 +54,7 @@ def build() -> None:
             or result.get("backend_hashes_checked") is not True or result.get("workspace_outside_resources") is not True
             or result.get("device_access") is not False or result.get("browser_started") is not False
             or result.get("artwork_slots") != 14 or result.get("artwork_formats") != ["PNG", "JPEG", "WEBP"]
-            or result.get("screensaver_revision") != "v4-native-contour"
+            or result.get("screensaver_revision") != screensaver.REVISION
             or result.get("poweroff_payload_size") != profile.protocol["poweroff"]["size"]
             or result.get("http_pairing") != {"preflight_status": 204, "pair_status": 200}):
         raise toolkit.ToolkitError(f"Die erzeugte EXE hat ihren HTTP-/Fenster-Selbsttest nicht bestanden: {result}")
