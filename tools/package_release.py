@@ -17,6 +17,7 @@ TEXT_FOLDERS = {"tools", "tests", "web-tests", "lib", "vendor", "docs"}
 TEXT_SUFFIXES = {".py", ".js", ".ps1", ".json", ".md", ".txt", ".LICENSE"}
 APP_ASSETS = {"assets/x6-icon.svg", "assets/x6-icon.ico", "assets/x6-icon.png", "assets/ddmy-x6-detail.png"}
 RAM_SOURCES = {"tools/x6_poweroff.c", "tools/x6_ram.ld", "vendor/actions_flash/actions_dump.c"}
+INSTALLER_SOURCE = "tools/windows_installer.iss"
 
 
 def allowed_source(name: str) -> bool:
@@ -24,13 +25,34 @@ def allowed_source(name: str) -> bool:
     path = PurePosixPath(name)
     if path.is_absolute() or ".." in path.parts or "private_dumps" in path.parts:
         return False
-    return name in ROOT_FILES or name in APP_ASSETS or name in RAM_SOURCES or (
+    return name in ROOT_FILES or name in APP_ASSETS or name in RAM_SOURCES or name == INSTALLER_SOURCE or (
         len(path.parts) > 1 and path.parts[0] in TEXT_FOLDERS and path.suffix in TEXT_SUFFIXES
     )
 
 
+def windows_files() -> list[tuple[Path, str]]:
+    """Share the exact approved payload between the portable ZIP and installer."""
+    python = Path(sys.base_prefix)
+    return [
+        (ROOT / "private_dumps/release/DDMY X6 Flasher.exe", "DDMY X6 Flasher.exe"),
+        (ROOT / "docs/BEDIENUNG.md", "Bedienung.md"),
+        (ROOT / "docs/BILDEDITOR.md", "BILDEDITOR.md"),
+        (ROOT / "THIRD_PARTY.md", "THIRD_PARTY.md"),
+        (ROOT / "vendor/fflate.LICENSE", "licenses/fflate.txt"),
+        (ROOT / "vendor/libusb.LICENSE", "licenses/libusb.txt"),
+        (ROOT / "vendor/Pillow.LICENSE", "licenses/Pillow.txt"),
+        (ROOT / "vendor/actions_flash/README.md", "licenses/Actions-Backend.md"),
+        (python / "LICENSE.txt", "licenses/Python.txt"),
+        (ROOT / "vendor/Tcl.LICENSE", "licenses/Tcl.txt"),
+        (python / "tcl/tk8.6/license.terms", "licenses/Tk.txt"),
+    ]
+
+
 def package() -> None:
-    """Produce only two release ZIPs and their SHA-256 checksums."""
+    """Produce portable/source ZIPs and a checked installer with their hashes."""
+    from build_installer import verify_installer
+
+    installer = verify_installer()
     names = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().rstrip("\0").split("\0")
     rejected = [name for name in names if not allowed_source(name)]
     if rejected:
@@ -50,20 +72,9 @@ def package() -> None:
         archive.write(library_source, "DDMY-X6-Flasher/vendor/" + dependency["filename"])
     helper = output / "DDMY-X6-Flasher-Windows.zip"
     with zipfile.ZipFile(helper, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.write(output / "DDMY X6 Flasher.exe", "DDMY X6 Flasher.exe")
-        archive.write(ROOT / "docs/BEDIENUNG.md", "Bedienung.md")
-        archive.write(ROOT / "docs/BILDEDITOR.md", "BILDEDITOR.md")
-        archive.write(ROOT / "THIRD_PARTY.md", "THIRD_PARTY.md")
-        archive.write(ROOT / "vendor/fflate.LICENSE", "licenses/fflate.txt")
-        archive.write(ROOT / "vendor/libusb.LICENSE", "licenses/libusb.txt")
-        archive.write(ROOT / "vendor/Pillow.LICENSE", "licenses/Pillow.txt")
-        archive.write(ROOT / "vendor/actions_flash/README.md", "licenses/Actions-Backend.md")
-        python = Path(sys.base_prefix)
-        for path, name in [(python / "LICENSE.txt", "Python.txt"),
-                           (ROOT / "vendor/Tcl.LICENSE", "Tcl.txt"),
-                           (python / "tcl/tk8.6/license.terms", "Tk.txt")]:
-            archive.write(path, "licenses/" + name)
-    lines = [f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}" for path in (helper, source)]
+        for path, name in windows_files():
+            archive.write(path, name)
+    lines = [f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}" for path in (helper, source, installer)]
     (output / "SHA256SUMS.txt").write_text("\n".join(lines) + "\n", encoding="ascii")
     print("\n".join(lines))
 

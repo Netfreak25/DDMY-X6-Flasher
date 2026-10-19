@@ -2,13 +2,16 @@
 
 <img src="assets/x6-icon.svg" alt="X6 Flasher Icon" width="72" align="right">
 
-Eine portable **Windows-App** zum Sichern, Vergleichen und Flashen des
+Eine **Windows-App mit Installer und portabler Version** zum Sichern, Vergleichen und Flashen des
 **DDMY X6 mit Actions ATJ2157**. Dieselben Hauptfunktionen stehen auch auf
 unserer WebUSB-Seite bereit.
 
-**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/tag/v0.3.0-beta.2)** ·
+**[Windows-App herunterladen](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/tag/v0.3.0-beta.3)** ·
 **[Online-Flasher öffnen](https://netfreak25.github.io/DDMY-X6-Flasher/)** ·
 **[Bedienung](docs/BEDIENUNG.md)**
+
+- **[Windows-Installer](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/download/v0.3.0-beta.3/DDMY-X6-Flasher-Setup.exe)**: Installation, Startmenüeintrag und Deinstallation.
+- **[Portable ZIP](https://github.com/Netfreak25/DDMY-X6-Flasher/releases/download/v0.3.0-beta.3/DDMY-X6-Flasher-Windows.zip)**: entpacken und starten.
 
 ## Funktionen
 
@@ -36,7 +39,7 @@ freigegeben. Kein unbestätigter Schreibbefehl wird automatisch wiederholt.
 
 ## Schnellstart
 
-1. Windows-ZIP entpacken und **DDMY X6 Flasher.exe** öffnen.
+1. Installer ausführen oder Windows-ZIP entpacken, dann **DDMY X6 Flasher.exe** öffnen.
 2. **Verbinden** anklicken. Erst dann wird der angeschlossene Player abgefragt.
 3. Eine der vier Aktionen auswählen. Für Flash/Restore zuerst die Datei beziehungsweise Sicherung wählen.
 4. Die App nach dem Vorgang schließen.
@@ -45,6 +48,10 @@ Kein Dienst, kein Autostart, keine separate Python-Installation und kein
 automatischer Browserstart. Fenster- und Taskleisten-Icon sind enthalten.
 Die native App benötigt **keinen Browser und keine lokale Website**.
 Der frühere Offline-Webstarter und „Offline öffnen“ sind entfernt.
+
+Updates erst nach beendetem Lesen, Schreiben und Rücklesen installieren. Das
+Setup wartet auf eine geschlossene App und beendet keine Prozesse. Sicherungen
+und Einstellungen in LocalAppData bleiben auch bei der Deinstallation erhalten.
 
 Voraussetzungen: Windows 10/11 (64 Bit), WinUSB für ADFU `10D6:10D6`.
 Der normale Massenspeichertreiber bleibt bestehen. Bei einem Windows-Zugriffsfehler
@@ -127,7 +134,7 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.3.0-beta.2 ist ein auf Hardware unverifizierter Build-Kandidat.**
+**v0.3.0-beta.3 ist ein auf Hardware unverifizierter Build-Kandidat.**
 Automatisierte Tests prüfen native Abläufe, ZIP-Austausch mit JavaScript,
 fehlende Bestätigungen, Zeitüberschreitungen, Rücklesefehler, GUI, HTTP-Grenzen
 und simuliertes WebUSB. Alle sieben Bereichskombinationen werden mit simulierten
@@ -155,6 +162,17 @@ Für den EXE-Build: PyInstaller 6.22.3, die acht hashgeprüften Runtime-Dateien 
 dem X6-Profil unter `private_dumps/toolkit/runtime/` und ARM GCC 13.3.0.
 `X6_ARM_GCC` kann auf den ARM-Compiler zeigen. `python tools/build_helper.py`
 baut den Ausschaltcode und die App und startet den hardwarefreien EXE-Selbsttest.
+
+Für den zusätzlichen Installer **Inno Setup 6** installieren und `X6_ISCC` auf
+`ISCC.exe` setzen. Danach `python tools/build_installer.py` ausführen. Das Setup
+übernimmt ausschließlich dieselben Dateien wie die portable ZIP. Nach dem Commit
+erzeugt `python tools/package_release.py` beide ZIPs und Prüfsummen einschließlich
+des Installers; veraltete Installer werden abgewiesen.
+
+`tools/install_local.ps1 -Installer <setup.exe> -InstallDir <ordner> -LogPath <log>`
+wartet für lokale Updates auf die freie Gerätesperre und fordert reguläres
+Schließen an. Die App schützt weiterhin laufende Aufträge und ungespeicherte
+Bildänderungen. Danach startet das Skript den Installer mit Windows-UAC.
 Die lokale Python-App startet über **Start X6 App.cmd**.
 `python tools/build_poweroff.py` baut ihren RAM-Code ins Runtime-Verzeichnis.
 

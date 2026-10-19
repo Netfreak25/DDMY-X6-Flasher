@@ -2,9 +2,20 @@
 
 ## Starten und verbinden
 
-Windows-ZIP entpacken, **DDMY X6 Flasher.exe** öffnen und **Verbinden** anklicken.
+Installer ausführen oder Windows-ZIP entpacken, **DDMY X6 Flasher.exe** öffnen
+und **Verbinden** anklicken.
 Der Start allein greift nicht auf den Player zu. Es wird kein Browser geöffnet.
 WinUSB muss für das ADFU-Gerät `10D6:10D6` installiert sein.
+
+Der Installer bietet Installation für alle Benutzer oder nur für dich an,
+erstellt einen Startmenüeintrag und optional ein Desktop-Icon. Eine vorhandene
+Installation wird im bisherigen Ordner aktualisiert. Die App wird nicht
+automatisch gestartet und es wird kein Dienst eingerichtet.
+
+**Vor Updates oder Deinstallation:** Lesen, Schreiben und Rücklesen vollständig
+abwarten, in Pages trennen und die App schließen. Solange die X6-App läuft,
+stoppt das Setup. Es beendet keine Prozesse und erzwingt keinen Neustart.
+Private Sicherungen und Einstellungen in LocalAppData werden nicht gelöscht.
 
 **Trennen** in der Windows-App hebt die Geräteauswahl auf; es startet den
 Player nicht neu. Dafür **ADFU verlassen** verwenden. Der ADFU-Wechsel bei einer
@@ -144,6 +155,6 @@ Rücklesung, beide BREC-Kopien und LFI. Musik und SD-Karte gehören nicht dazu.
 
 ## Prüfstand
 
-Version 0.3.0-beta.2: automatisiert und mit vorhandenen Dateien offline geprüft,
+Version 0.3.0-beta.3: automatisiert und mit vorhandenen Dateien offline geprüft,
 **auf Hardware unverifizierter Build-Kandidat**. Für diese Version wurde der
 physische Player nicht angesprochen.

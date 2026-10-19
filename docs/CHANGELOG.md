@@ -1,5 +1,19 @@
 # Änderungen
 
+## 0.3.0-beta.3
+
+- Zusätzlicher Windows-Installer mit App-Icon, Startmenüeintrag, optionaler
+  Desktop-Verknüpfung und Deinstallation. Portable ZIP bleibt verfügbar.
+- Installer und ZIP verwenden dieselbe begrenzte Dateiliste. Keine Firmware,
+  extrahierten Bilder oder privaten Sicherungen im Installer.
+- Installation und Deinstallation blockieren bei laufender X6-App; kein
+  zwangsweises Schließen und kein automatischer Neustart.
+- Lokales Update-Skript wartet auf das Ende des Geräteauftrags, schließt die
+  App regulär und startet erst danach das Setup. Ungespeicherte Bearbeitungen
+  werden weiterhin durch die App geschützt.
+- Pakettests prüfen Dateiauswahl und veraltete Installer. Programm- und
+  Firmware-Übertragungsfunktionen bleiben unverändert.
+
 ## 0.3.0-beta.2
 
 - Windows-Bildeditor: Die Galerie nutzt die gesamte verfügbare Breite und passt
