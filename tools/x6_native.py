@@ -150,11 +150,12 @@ class NativeOperations:
         self.log.event("backup_saved", path=str(destination))
         return before
 
-    def flash_selection(self, selection: images.Selection, destination: Path) -> dict:
+    def flash_selection(self, selection: images.Selection, destination: Path | None) -> dict:
         """Write only detected areas in MBREC → BREC → LFI order, without retries."""
         self.begin("flash-components")
-        if any(destination.resolve() == source.resolve() or source.is_dir() and source.resolve() in destination.resolve().parents
-               for source in selection.sources):
+        if destination is not None and any(
+                destination.resolve() == source.resolve() or source.is_dir() and source.resolve() in destination.resolve().parents
+                for source in selection.sources):
             raise tk.ToolkitError("Die Rücksicherung darf die ausgewählten Quelldateien nicht überschreiben.")
         selected = images.restage(selection, self.log.directory / "selection", self.profile)
         if not selected.has_boot:
@@ -167,7 +168,16 @@ class NativeOperations:
             prepare_transfer(selected.files["brec"].read_bytes(), checked.file("fwsc.bin").read_bytes(), self.profile)
         backend = self.session()
         self.check_selection_device(selected)
-        before = self.backup_before_boot_write(backend, destination)
+        if destination is not None:
+            before = self.backup_before_boot_write(backend, destination)
+        else:
+            self.log.event("backup_skipped", requested_by_user=True)
+            self.step("Bootgeometrie und unveränderte Bootbereiche prüfen")
+            before = self.log.directory / "preflight"
+            before.mkdir()
+            if "lfi" in selected.files:
+                self.read_lfi_header(backend, before / "lfi.bin")
+            tk.read_boot(backend, before)
         if "lfi" in selected.files:
             tk.check_preserved_header(selected.files["lfi"], before / "lfi.bin", self.profile)
         if "mbrec" in selected.files and selected.files["mbrec"].read_bytes()[3:16] != (before / "mbrec.bin").read_bytes()[3:16]:
@@ -207,20 +217,33 @@ class NativeOperations:
         result["warning"] = not result["identical"]
         return result
 
-    def flash(self, image: Path, backup_destination: Path) -> dict:
+    def read_lfi_header(self, backend: tk.ActionsBackend, path: Path) -> None:
+        """Read only one sector for identity checks, never a full recovery image."""
+        self.step("Gerätespezifischen LFI-Header prüfen")
+        backend.run("read_header", "read_lfi", "0", hex(self.profile.sector_size), str(path), timeout_s=30)
+        if not path.is_file() or path.stat().st_size != self.profile.sector_size:
+            raise tk.ToolkitError("LFI-Header wurde nicht vollständig gelesen.")
+
+    def flash(self, image: Path, backup_destination: Path | None) -> dict:
         self.begin("flash")
-        if image.resolve() == backup_destination.resolve():
+        if backup_destination is not None and image.resolve() == backup_destination.resolve():
             raise tk.ToolkitError("Die Sicherung darf die ausgewählte Firmware nicht überschreiben.")
         staged = self.stage_lfi(image)
         backend = self.session()
-        self.step("Bisheriges LFI sichern")
         before = self.log.directory / "before_lfi.bin"
-        tk.read_lfi(backend, before, "read_before", validate=False)
+        if backup_destination is not None:
+            self.step("Bisheriges LFI sichern")
+            tk.read_lfi(backend, before, "read_before", validate=False)
+        else:
+            self.log.event("backup_skipped", requested_by_user=True)
+            before = self.log.directory / "device_header.bin"
+            self.read_lfi_header(backend, before)
         tk.check_preserved_header(staged, before, self.profile)
-        self.pending_backup = before
-        archive.save_checked(before, backup_destination)
-        self.pending_backup = None
-        self.log.event("backup_saved", path=str(backup_destination), sha256=tk.sha256_file(before))
+        if backup_destination is not None:
+            self.pending_backup = before
+            archive.save_checked(before, backup_destination)
+            self.pending_backup = None
+            self.log.event("backup_saved", path=str(backup_destination), sha256=tk.sha256_file(before))
         self.step("LFI schreiben")
         tk.write_area(backend, "write_lfi", self.profile.protocol["lfi_sector"], staged)
         tk.finalize_flash(backend)

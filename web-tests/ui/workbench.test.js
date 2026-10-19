@@ -107,6 +107,7 @@ async function pageFixture(bootMapping = profile.boot_write_mapping_verified, as
       async bootstrap(){}
       async payload(name){return new Uint8Array(await (await fetch('/test-payload/'+name)).arrayBuffer());}
       async flashDriver(){window.__calls.push('driver');}
+      async readLfiHeader(){window.__calls.push('header');return (await file('lfi.bin')).slice(0,${profile.sector_size});}
       async readLfi(progress){window.__calls.push('read');await new Promise(r=>setTimeout(r,150));let data=await file('lfi.bin');progress?.(data.length,data.length);if(window.__mismatch)data[0]^=1;return data;}
       async readBoot(index){window.__calls.push('boot'+index);if(window.__badBoot&&index===0)throw Error('bad brec checksum');return index===0?{'mbrec.bin':await file('mbrec.bin'),'brec0.bin':await file('brec0.bin')}:{'mbrec_copy.bin':await file('mbrec_copy.bin'),'brec1.bin':await file('brec1.bin')};}
       async writeArea(name,data){window.__calls.push(name);if(window.__writeFailure)throw Error('USB-Befehl nicht bestätigt.');window.__deviceFiles||={};for(const key of ({lfi:['lfi.bin'],mbrec:['mbrec.bin','mbrec_copy.bin'],brec:['brec0.bin','brec1.bin']}[name]||[]))window.__deviceFiles[key]=data.slice();}
@@ -331,6 +332,23 @@ test('flash uses confirmation, saves before writing and shows verified restart',
   await page.locator('#confirm-go').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'LFI geschrieben und verifiziert.');
   assert.deepEqual(await page.evaluate(() => window.__calls), ['read', 'save', 'driver', 'lfi', 'final', 'read', 'reset']);
+  assert.equal(await page.locator('#device-badge').textContent(), 'Normal gestartet');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('optional backup checkbox defaults on and skips the picker and full preread when cleared', async () => {
+  const {page, context, errors} = await pageFixture();
+  await connect(page); await selectFirmware(page);
+  assert.equal(await page.locator('#backup-before-flash').isChecked(), true);
+  await page.locator('#backup-before-flash').uncheck();
+  await page.evaluate(() => {window.__calls = []; window.showSaveFilePicker = () => {throw Error('Backup was disabled');};});
+  await page.locator('#flash').click();
+  await page.locator('#confirmation').waitFor({state: 'visible'});
+  assert.match(await page.locator('#confirm-description').textContent(), /Ohne neue Rücksicherung/);
+  await page.locator('#confirm-go').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'LFI geschrieben und verifiziert.');
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['header', 'driver', 'lfi', 'final', 'read', 'reset']);
   assert.equal(await page.locator('#device-badge').textContent(), 'Normal gestartet');
   assert.deepEqual(errors, []);
   await context.close();

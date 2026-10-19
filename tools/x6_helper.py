@@ -79,8 +79,8 @@ class HelperWindow:
             self.thread = threading.Thread(target=server.serve_forever, daemon=True)
             self.thread.start()
         root.title("DDMY X6 · Flasher")
-        root.geometry("780x780")
-        root.minsize(720, 760)
+        root.geometry("780x820")
+        root.minsize(720, 800)
         root.configure(background=BACKGROUND)
         self.icon = tk.PhotoImage(file=str(toolkit.ROOT / "assets/x6-icon.png"))
         root.iconphoto(True, self.icon)
@@ -107,6 +107,7 @@ class HelperWindow:
 
         self.firmware = tk.StringVar()
         self.backup = tk.StringVar()
+        self.backup_before_flash = tk.BooleanVar(value=True)
         firmware = self.section(panel, "Firmware · automatische Bereichserkennung")
         self.file_row(firmware, self.firmware, self.choose_firmware)
         row = tk.Frame(firmware, bg="white")
@@ -117,6 +118,11 @@ class HelperWindow:
         self.compare_button.pack(side="left")
         self.artwork_button = self.button(row, "Bilder bearbeiten", self.open_artwork)
         self.artwork_button.pack(side="left", padx=(8, 0))
+        self.backup_check = tk.Checkbutton(
+            firmware, text="Backup vor dem Flashen erstellen", variable=self.backup_before_flash,
+            bg="white", activebackground="white", font=("Segoe UI", 10))
+        self.backup_check.pack(anchor="w", pady=(6, 0))
+        self.controls.append(self.backup_check)
         self.label(firmware, "MBREC, BREC, LFI · einzeln, mehrere BINs oder ein vollständiges ZIP-Paket.",
                    background="white").pack(anchor="w", pady=(5, 0))
 
@@ -144,7 +150,17 @@ class HelperWindow:
                                       font=("Segoe UI", 11), wraplength=680, justify="left", anchor="w")
         self.activity_label.pack(fill="x")
         panel.bind("<Configure>", lambda event: self.activity_label.configure(wraplength=max(300, event.width - 52)))
-        self.progress = ttk.Progressbar(panel, mode="indeterminate")
+        # A flat bar avoids the Windows theme's pulsing highlight. Unknown
+        # durations use a stable empty bar and phase text, never a marquee.
+        style = ttk.Style(root)
+        for element in ("trough", "pbar"):
+            name = f"X6.Horizontal.Progressbar.{element}"
+            if name not in style.element_names():
+                style.element_create(name, "from", "clam", f"Horizontal.Progressbar.{element}")
+        style.layout("X6.Horizontal.TProgressbar", [("X6.Horizontal.Progressbar.trough", {
+            "sticky": "nswe", "children": [("X6.Horizontal.Progressbar.pbar", {"side": "left", "sticky": "ns"})]})])
+        style.configure("X6.Horizontal.TProgressbar", background=TEAL, troughcolor="#e3f0eb", borderwidth=0)
+        self.progress = ttk.Progressbar(panel, mode="determinate", style="X6.Horizontal.TProgressbar")
         self.progress.pack(fill="x", pady=(10, 4))
         self.progress_text = tk.StringVar()
         self.progress_label = tk.Label(panel, textvariable=self.progress_text, bg=BACKGROUND, fg=TEAL, font=("Segoe UI", 9))
@@ -273,8 +289,13 @@ class HelperWindow:
             description += "Geänderte Bilder: " + ", ".join(changed_labels) + "\n"
         if "brec" in selection.areas:
             description += "BREC wird in beiden Bootkopien aktualisiert.\n"
-        description += "Zuerst Rücksicherung speichern, dann diese Bereiche schreiben und vollständig zurücklesen."
+        make_backup = self.backup_before_flash.get()
+        description += ("Zuerst Rücksicherung speichern. " if make_backup else "Ohne neue Rücksicherung. ")
+        description += "Diese Bereiche schreiben und vollständig zurücklesen."
         if not messagebox.askokcancel("Auswahl flashen", description, parent=self.root):
+            return
+        if not make_backup:
+            self.start(f"{selection.label} flashen", lambda: self.operations.flash_selection(selection, None))
             return
         extension = ".x6backup.zip" if selection.has_boot else ".bin"
         destination = filedialog.asksaveasfilename(parent=self.root, title="Rücksicherung vor dem Flashen speichern",
@@ -324,8 +345,8 @@ class HelperWindow:
         self.device_job, self.completion, self.job_result = device, on_result, None
         self.report = [{"event": "start", "action": title}]
         self.activity.set(title)
-        self.progress.configure(mode="indeterminate")
-        self.progress.start()
+        self.progress.configure(mode="determinate", value=0)
+        self.progress_text.set("Bitte warten …")
         self.update_controls()
 
         def work():
@@ -359,11 +380,11 @@ class HelperWindow:
             self.report.append(event)
             kind = event["event"]
             if kind == "phase":
-                self.activity.set(event["label"])
-                self.progress.stop()
-                self.progress.configure(mode="indeterminate", value=0)
-                self.progress.start()
-                self.progress_text.set("")
+                if self.activity.get() != event["label"]:
+                    self.activity.set(event["label"])
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate", value=0)
+                    self.progress_text.set("Bitte warten …")
             elif kind == "backend_output":
                 match = re.search(r"write_flash: (\d+)/(\d+) sectors", event["line"])
                 if match:

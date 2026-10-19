@@ -19,7 +19,7 @@ unserer WebUSB-Seite bereit.
 | --- | --- |
 | Sicherung erstellen | MBREC, MBREC-Kopie, BREC 0, BREC 1 und vollständiges LFI als kompatibles `.x6backup.zip` speichern. |
 | Sicherung wiederherstellen | ZIP oder Toolkit-Ordner prüfen, MBREC → BREC → LFI schreiben, abschließen und alle fünf Dateien zurücklesen. |
-| Auswahl flashen | MBREC, BREC und LFI am Inhalt erkennen: einzeln, beliebig kombiniert oder als vollständiges ZIP-Paket. Vorher Rücksicherung speichern, danach vollständig zurücklesen. |
+| Auswahl flashen | MBREC, BREC und LFI am Inhalt erkennen: einzeln, beliebig kombiniert oder als vollständiges ZIP-Paket. Backup per Checkbox optional (voreingestellt an), danach vollständig zurücklesen. |
 | Mit Gerät vergleichen | Alle ausgewählten Bereiche byteweise vergleichen, bei BREC beide Kopien. Beschädigtes Geräte-LFI bleibt vergleichbar. |
 | ADFU betreten / verlassen | Den Wartungsmodus direkt in der App wechseln; Erfolg erst nach erkannter USB-Anmeldung melden. |
 | Player ausschalten | Eigenen RAM-Code laden und zurücklesen. Nach Startbestätigung USB abziehen; der Code wartet darauf. |
@@ -134,12 +134,14 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.3.0-beta.5 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
-Neu: automatische Hintergrundaufbereitung bei erkannter Kontur-Firmware in
-Windows und Web. Die Downloadlinks zeigen weiterhin auf die veröffentlichte
-beta.3; beta.4 und beta.5 wurden nicht veröffentlicht.
+**v0.3.0-beta.6 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
+Neu: Backup vor dem Flashen per Checkbox in Windows und Web abwählbar;
+ruhige Windows-Fortschrittsanzeige ohne Lauflicht und ohne Neustart der Animation
+bei Statusmeldungen. Das vollständige Rücklesen bleibt aktiv.
+Die Downloadlinks zeigen weiterhin auf die veröffentlichte beta.3;
+beta.4 bis beta.6 wurden nicht veröffentlicht.
 
-beta.5 erkennt ausschliesslich den korrigierten Konturpfad
+Die Bildaufbereitung erkennt wie in beta.5 ausschliesslich den Konturpfad
 `v5-bank-local-contour`. Der v4-Firmwarekandidat wurde nach dem Bericht ueber
 blinkende Schrift und ausbleibenden Bildwechsel zurueckgezogen. Die App
 repariert keinen Firmwarecode und flasht nicht automatisch; unbekannte und

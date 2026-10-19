@@ -44,6 +44,19 @@ class HelperTests(unittest.TestCase):
         self.window.connect_button.invoke()
         self.assertFalse(self.window.connected)
 
+    def test_backup_checkbox_is_default_on_and_skip_avoids_save_dialog(self):
+        selection = SimpleNamespace(label="LFI", areas=("lfi",), has_boot=False)
+        self.assertTrue(self.window.backup_before_flash.get())
+        self.window.backup_before_flash.set(False)
+        with mock.patch.object(helper.messagebox, "askokcancel", return_value=True) as confirm, \
+                mock.patch.object(helper.filedialog, "asksaveasfilename") as save, \
+                mock.patch.object(self.window.operations, "flash_selection", return_value={}) as flash, \
+                mock.patch.object(self.window, "start", side_effect=lambda _label, action: action()):
+            self.window.flash(selection)
+        save.assert_not_called()
+        flash.assert_called_once_with(selection, None)
+        self.assertIn("Ohne neue Rücksicherung", confirm.call_args.args[1])
+
     def test_double_click_close_guard_and_busy_buttons(self):
         gate = threading.Event()
         with mock.patch.object(self.window.operations, "mode", side_effect=lambda *_: gate.wait(3) and {"message": "ADFU bereit"}) as action:
@@ -135,6 +148,20 @@ class HelperTests(unittest.TestCase):
         self.window.poll()
         self.assertEqual(self.window.progress.cget("value"), 32)
         self.assertIn("25%", self.window.progress_text.get())
+
+    def test_restart_wait_is_static_and_duplicate_phases_do_not_reset_display(self):
+        with mock.patch.object(self.window.progress, "start") as animate:
+            self.window.events.put({"event": "phase", "label": "Neustarten"})
+            self.window.poll()
+            with mock.patch.object(self.window.progress, "configure") as configure:
+                for _ in range(20):
+                    self.window.events.put({"event": "phase", "label": "Neustarten"})
+                self.window.poll()
+                configure.assert_not_called()
+            animate.assert_not_called()
+        self.assertEqual(str(self.window.progress.cget("mode")), "determinate")
+        self.assertEqual(self.window.progress.cget("value"), 0)
+        self.assertEqual(self.window.progress_text.get(), "Bitte warten …")
 
     def test_minimum_window_does_not_clip_action_or_footer_buttons(self):
         self.root.geometry("720x760+10000+10000")

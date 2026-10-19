@@ -36,10 +36,11 @@ Zusätzlich bleiben die gelesenen Dateien im privaten Arbeitsverzeichnis erhalte
 
 1. Eine oder mehrere BIN-Dateien auswählen (Mehrfachauswahl mit Strg), oder ein vollständiges `.x6backup.zip`.
 2. Die Anzeige nennt automatisch **MBREC**, **BREC**, **LFI** oder ihre Kombination. Erkannt wird der Inhalt, unabhängig vom Dateinamen.
-3. **Auswahl flashen** wählen, die angezeigten Bereiche bestätigen und den Speicherort der Rücksicherung wählen.
-4. Sichern → Schreiben → vollständiges Rücklesen → Neustart abwarten.
+3. **Backup vor dem Flashen erstellen** ist voreingestellt. Bei Bedarf abwählen, um ohne neue Rücksicherung zu flashen.
+4. **Auswahl flashen** wählen, die angezeigten Bereiche bestätigen und bei aktiviertem Backup dessen Speicherort wählen.
+5. Optional sichern → Schreiben → vollständiges Rücklesen → Neustart abwarten.
 
-Die Sicherung wird geschlossen, auf Datenträger geschrieben und vollständig
+Bei aktiviertem Backup wird die Sicherung geschlossen, auf Datenträger geschrieben und vollständig
 verglichen, bevor der erste Flash-Schreibbefehl startet. Die ausgewählte
 Firmwaredatei bleibt unverändert. LFI-Header, Größe und alle 148 Dateiprüfsummen
 werden geprüft. Bei BREC werden NAND-Zuordnung, Größe sowie Code- und Headerprüfsumme
@@ -58,10 +59,18 @@ werden zusammengefasst; widersprüchliche Kopien werden abgewiesen. Bereits für
 die Übertragung angepasste BREC-Dateien werden abgelehnt: die App braucht den
 fertigen BREC aus dem Dump und bereitet selbst eine getrennte Übertragungskopie vor.
 
-Bei LFI allein wird das bisherige LFI als BIN gespeichert. Sobald MBREC oder BREC
+Bei aktiviertem Backup und LFI allein wird das bisherige LFI als BIN gespeichert. Sobald MBREC oder BREC
 gewählt ist, wird vorher eine vollständige, geprüfte ZIP-Sicherung erstellt.
 Ist das nicht möglich, stoppt dieser Weg vor dem Schreiben; für eine Reparatur
 aus vorhandener Sicherung dient **Sicherung wiederherstellen**.
+
+Ohne Backup entfallen die vollständige Vorab-LFI-Lesung und der Speicherdialog.
+Der gerätespezifische LFI-Header und bei Bootänderungen die Bootdatensätze werden
+weiterhin vorab geprüft. Das vollständige Rücklesen nach dem Schreiben bleibt aktiv.
+Diese Auswahl gilt auch für **Änderungen flashen** im Bildeditor.
+
+Während Wartephasen, beispielsweise beim Neustart, bleibt die Windows-Fortschrittsleiste
+ruhig und zeigt **Bitte warten …**. Bestätigte Fortschrittswerte werden weiterhin angezeigt.
 
 MBREC-Bootpositionen und NAND-Geometrie müssen zum angeschlossenen X6 passen.
 Nach Boot-Schreibvorgängen werden beide BREC-Kopien und MBREC zurückgelesen:

@@ -17,6 +17,7 @@ const inputs = Object.fromEntries(Object.entries(AREA_FILES).map(([area, names])
 function fixture() {
   const calls = [], current = {...files};
   const driver = {payload, flashDriver: async () => calls.push('driver'),
+    readLfiHeader: async () => {calls.push('header'); return current['lfi.bin'].slice(0, profile.sector_size);},
     readLfi: async () => {calls.push('read-lfi'); return current['lfi.bin'];},
     readBoot: async index => {
       calls.push(`read-boot${index}`);
@@ -51,6 +52,24 @@ test('content detection accepts all seven combinations and writes only those are
     assert.deepEqual(f.calls.filter(call => call.startsWith('write-')), areas.map(area => `write-${area}`));
     assert.equal(f.calls[f.calls.indexOf(`write-${areas[0]}`) - 1], 'driver');
     assert.equal(f.calls.filter(call => call === 'final').length, 1);
+    assert.equal(f.calls.at(-1), 'reset');
+    for (const [area, names] of Object.entries(AREA_FILES)) for (const name of names) {
+      assert.deepEqual(f.current[name], areas.includes(area) ? inputs[area] : files[name]);
+    }
+  }
+});
+
+test('optional backup skips full preread and saving for all seven combinations, preserving verification', async () => {
+  for (let mask = 1; mask < 8; mask++) {
+    const f = fixture(), areas = Object.keys(AREA_FILES).filter((_, index) => mask & (1 << index));
+    const selected = await selectImages(areas.map(area => source(inputs[area])), profile);
+    const result = await f.operations.flashSelection(selected, () => assert.fail('Backup was disabled'), {backup: false});
+    assert.equal(result.normalMode, true);
+    assert.deepEqual(f.calls.filter(call => call.startsWith('write-')), areas.map(area => `write-${area}`));
+    const beforeWrite = f.calls.slice(0, f.calls.indexOf(`write-${areas[0]}`));
+    assert.ok(!beforeWrite.includes('read-lfi'));
+    assert.equal(f.calls.filter(call => call === 'header').length, Number(areas.includes('lfi')));
+    assert.equal(f.calls.filter(call => call === 'read-lfi').length, Number(areas.includes('lfi')));
     assert.equal(f.calls.at(-1), 'reset');
     for (const [area, names] of Object.entries(AREA_FILES)) for (const name of names) {
       assert.deepEqual(f.current[name], areas.includes(area) ? inputs[area] : files[name]);
