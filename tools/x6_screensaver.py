@@ -6,8 +6,12 @@ import hashlib
 import struct
 from itertools import pairwise
 
-REVISION = "v5-bank-local-contour"
+REVISION = "v7-catalog-compositor"
 MAXIMA = (31, 63, 31)
+CATALOG_OFFSET, CATALOG_ENTRIES, CATALOG_LIMIT = 0x40, 0x50, 0x400
+CATALOG_HEADER = struct.Struct("<4sHHII")
+CATALOG_CAPACITY = (CATALOG_LIMIT - CATALOG_ENTRIES) // 4
+IMAGE_BYTES = 240 * 320 * 2
 
 
 def supported(data: bytes, entries: dict, profile: dict | None) -> bool:
@@ -16,9 +20,35 @@ def supported(data: bytes, entries: dict, profile: dict | None) -> bool:
         return False
     for name, expected in profile["supported_code"].items():
         entry = entries.get(name)
-        if entry is None or hashlib.sha256(data[entry.data_offset:entry.data_offset + entry.length]).hexdigest() != expected:
+        expected = expected if isinstance(expected, list) else [expected]
+        if entry is None or hashlib.sha256(data[entry.data_offset:entry.data_offset + entry.length]).hexdigest() not in expected:
             return False
     return True
+
+
+def catalog_offsets(style: bytes) -> tuple[int, ...]:
+    """Read the v7 list independently of mutable picture pixels and image count."""
+    if len(style) < CATALOG_LIMIT:
+        raise ValueError("Screensaver-Bilderkatalog fehlt.")
+    magic, version, count, size, flags = CATALOG_HEADER.unpack_from(style, CATALOG_OFFSET)
+    if (magic, version, size, flags) != (b"X6SC", 1, len(style), 0) or not 1 <= count <= CATALOG_CAPACITY:
+        raise ValueError("Ungültiger Screensaver-Bilderkatalog.")
+    offsets = struct.unpack_from(f"<{count}I", style, CATALOG_ENTRIES)
+    if (offsets[0] != 0 or len(set(offsets)) != count
+            or any(offset < CATALOG_LIMIT or offset % 2 or offset + IMAGE_BYTES > size for offset in offsets[1:])):
+        raise ValueError("Ungültige Screensaver-Bildoffsets.")
+    return offsets
+
+
+def config_count_offset(config: bytes) -> int:
+    """Resolve native CONFIG record 7 rather than pinning its payload address."""
+    descriptor = 16 + 7 * 8
+    if config[:4] != b"cfg\0" or len(config) < descriptor + 8:
+        raise ValueError("Ungültige Screensaver-Konfiguration.")
+    offset, length = struct.unpack_from("<II", config, descriptor)
+    if length != 8 or offset < descriptor + 8 or offset + length > len(config):
+        raise ValueError("Ungültige Screensaver-Anzahl.")
+    return offset
 
 
 def curve(y: int, points: list[list[int]]) -> int:

@@ -134,16 +134,19 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.3.0-beta.5 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
-Neu: automatische Hintergrundaufbereitung bei erkannter Kontur-Firmware in
-Windows und Web. Die Downloadlinks zeigen weiterhin auf die veröffentlichte
-beta.3; beta.4 und beta.5 wurden nicht veröffentlicht.
+**v0.3.0-beta.6 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
+Windows und Web bieten das Nachrüsten bzw. Aktualisieren des Bildschirmschoners
+auf v7 ausdrücklich als Option an. Bereits aktueller Code wird unabhängig von
+den Hintergrundpixeln erkannt; Hello-X6-Varianten behalten ihren Launcher.
+Der dezente Verlauf wird bei unterstützter Firmware automatisch auf neue
+Hintergrundmotive angewendet. Platz 0 bleibt bei v7 fest schwarz.
 
-beta.5 erkennt ausschliesslich den korrigierten Konturpfad
-`v5-bank-local-contour`. Der v4-Firmwarekandidat wurde nach dem Bericht ueber
-blinkende Schrift und ausbleibenden Bildwechsel zurueckgezogen. Die App
-repariert keinen Firmwarecode und flasht nicht automatisch; unbekannte und
-aeltere Images behalten das bisherige Verhalten bei der Bildbearbeitung.
+Zusätzlich prüfen Import, Export und Schreibvorbereitung die vollständige
+LFI-Sektorzuordnung. Lücken werden als Nullpadding zugeordnet, ohne benannte
+Dateiinhalte zu verlieren. Die Originaldateien bleiben erhalten. Ungültige
+Dateiinhalte werden nicht durch neue Prüfsummen kaschiert.
+Die Downloadlinks zeigen weiterhin auf die veröffentlichte beta.3;
+dieser Stand wird nicht gepusht oder veröffentlicht.
 Automatisierte Tests prüfen native Abläufe, ZIP-Austausch mit JavaScript,
 fehlende Bestätigungen, Zeitüberschreitungen, Rücklesefehler, GUI, HTTP-Grenzen
 und simuliertes WebUSB. Alle sieben Bereichskombinationen werden mit simulierten

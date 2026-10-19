@@ -1,7 +1,7 @@
 import { ActionsUSB, usbId, delay } from './lib/transport.js';
 import { X6Driver } from './lib/driver.js';
 import { X6Operations, incompleteDumpMessage } from './lib/workflows.js';
-import { validateBundle, sha256, assertSame } from './lib/formats.js';
+import { normalizeBundle, sha256, assertSame } from './lib/formats.js';
 import { selectImages, selectionLabel, hasBoot } from './lib/images.js';
 import { packBackup, unpackBackup, importFolder } from './lib/archive.js';
 import { sessionFromLocation, bridgeRequest, pairHelper, saveSession } from './lib/bridge.js';
@@ -263,8 +263,8 @@ async function selectBackup(selection, folder) {
   await run('Sicherung prüfen', async () => {
     const files = folder ? await importFolder(selection, state.profile) :
       unpackBackup(new Uint8Array(await selection[0].arrayBuffer()), state.profile);
-    const manifest = await validateBundle(files, state.profile);
-    state.backup = {files, manifest};
+    state.backup = await normalizeBundle(files, state.profile);
+    if (state.backup.changes.length) log({event: 'lfi_padding_normalized', changes: state.backup.changes});
     $('backup-info').textContent = 'Vollständige X6-Sicherung · Prüfsummen gültig';
     result('Sicherung ist vollständig.', 'Bootdatensätze und Firmware sind für eine Wiederherstellung vorhanden.', 'success');
   });

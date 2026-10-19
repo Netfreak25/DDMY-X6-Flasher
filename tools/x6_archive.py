@@ -7,6 +7,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
+import x6_lfi
 import x6_toolkit as toolkit
 
 MANIFEST_LIMIT = 65536
@@ -51,7 +52,40 @@ def import_backup(source: Path, target: Path, profile: toolkit.Profile) -> dict:
                         output.write(data)
         except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as error:
             raise toolkit.ToolkitError(f"Ungültiges Sicherungsarchiv: {error}") from error
+    # Authenticate the imported hashes before changing any staged bytes.
+    manifest = toolkit.verify_bundle(target, profile, allow_padding=True)
+    changes = []
+    source = (target / "lfi.bin").read_bytes()
+    result = x6_lfi.normalize_lfi(source, changes)
+    if changes:
+        shutil.copyfile(target / "lfi.bin", target / "original-lfi.bin")
+        shutil.copyfile(target / "manifest.json", target / "original-manifest.json")
+        (target / "lfi.bin").write_bytes(result)
+        previous = manifest["files"]["lfi.bin"]["sha256"]
+        manifest["files"]["lfi.bin"] = {"size": len(result), "sha256": toolkit.sha256_file(target / "lfi.bin")}
+        manifest["lfi_normalization"] = {"source_sha256": previous, "changes": changes}
+        manifest.update(hardware_verified=False, kind="firmware_candidate")
+        toolkit.write_manifest(target, manifest)
     return toolkit.verify_bundle(target, profile)
+
+
+def stage_lfi(source: Path, target: Path, profile: toolkit.Profile) -> list[dict]:
+    """Keep original import bytes beside the normalized, checksum-checked LFI."""
+    if source.stat().st_size != profile.lfi_size:
+        raise toolkit.ToolkitError("Falsche X6-Firmwaregröße.")
+    original = source.read_bytes()
+    changes = []
+    try:
+        result = x6_lfi.normalize_lfi(original, changes)
+    except ValueError as error:
+        raise toolkit.ToolkitError(f"Ungültiges X6-LFI: {error}") from error
+    if changes:
+        target.with_name(target.stem + ".original.bin").write_bytes(original)
+        report = {"source_sha256": toolkit.sha256_file(source), "changes": changes}
+        target.with_suffix(".normalization.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    target.write_bytes(result)
+    toolkit.validate_lfi(target, profile)
+    return changes
 
 
 def save_checked(source: Path, destination: Path) -> None:

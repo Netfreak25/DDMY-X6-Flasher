@@ -1,6 +1,6 @@
 # Bilder bearbeiten · Windows und Web
 
-Der Bildeditor in **v0.3.0-beta.5 (lokaler Build)** ersetzt vorhandene Bilder in deinen eigenen
+Der Bildeditor in **v0.3.0-beta.6 (lokaler Build)** ersetzt vorhandene Bilder in deinen eigenen
 Firmwaredateien. Er liefert keine Firmware oder Bildsammlung mit. Bearbeiten
 und Speichern benötigen weder Player noch Windows-Helfer auf der Website.
 
@@ -43,6 +43,9 @@ Die Ressourcenindizes in der Tabelle sind nullbasiert.
 
 Es können keine Plätze hinzugefügt oder gelöscht werden. Die Firmware entscheidet
 weiterhin, welchen der 11 Hintergründe der Screensaver verwendet.
+Bei Screensaver v7 ist der erste Platz fest schwarz und nicht bearbeitbar.
+Die zehn Motive dahinter bleiben bearbeitbar. Die vorbereitete variable
+Bilderliste ist die Grundlage einer späteren Erweiterung des Editors.
 
 ## Motiv und Ausschnitt
 
@@ -69,7 +72,7 @@ der Kopplung allein verändert noch kein Bild.
 
 ## Automatische Hintergrundaufbereitung
 
-Bei erkanntem Kontur-Zeichenpfad `v5-bank-local-contour` erhalten die elf
+Bei erkanntem Kontur-Zeichenpfad erhalten die bearbeitbaren
 Bildschirmschoner-Hintergründe nach Ausschnitt und Drehung einen dezenten,
 an Bildschirmkoordinaten gebundenen Helligkeitsverlauf. Vorschau und Export
 verwenden dieselben RGB565-Pixel. Uhr, Datum und Kontur zeichnet der Player;
@@ -83,9 +86,14 @@ bleibt es auch nach Reset als geändert markiert. Wiederholte Aufbereitung
 dunkelt das Motiv nicht weiter ab. Die Uploadquelle bleibt während der Sitzung
 erhalten; ein erneutes Öffnen kann frühere Ausschnitte nicht rekonstruieren.
 
-Bloßes Laden ändert nichts. Ältere oder unbekannte Firmware behält das bisherige
-Verhalten; der Flasher installiert keinen Kontur-Code. Startbild, frühes
-BREC-Startbild und Ausschaltbild erhalten keinen Verlauf.
+Bloßes Laden installiert keinen Screensaver und verändert keine Bildpixel.
+Bei älteren unterstützten Images bietet der Editor ausdrücklich
+**Bildschirmschoner nachrüsten/aktualisieren** an. Erst die Auswahl dieser
+Funktion übernimmt v7 in die Arbeitskopie. Bereits aktueller Code wird erkannt
+und nicht erneut gepatcht; Hello X6 bleibt bei einem Upgrade erhalten.
+Bei Hintergrundänderungen ohne passenden Zeichner weist der Editor auf das
+optionale Upgrade hin. Unbekannter Code wird nicht gepatcht.
+Startbild, frühes BREC-Startbild und Ausschaltbild erhalten keinen Verlauf.
 
 Das versionierte Profil liegt in `tools/x6_artwork.json` (Paket:
 `profiles/x6_artwork.json`). Python und JavaScript teilen Testvektoren:
@@ -93,6 +101,23 @@ oberer Smoothstep `(0,255) → (78,210) → (190,255)`, für Hintergrund 1 um
 49 Pixel verschoben; unten `(225,255) → (319,225)`. Ganzzahlige Berechnung,
 Abrunden erst nach Smoothstep, RGB565-Kanalbegrenzung ohne erneute Abdunklung.
 Code-/Font-Hashes erkennen die unterstützte Firmware unabhängig von Bildern.
+
+## LFI-Größe und Nullpadding
+
+Beim Import, Export und Vorbereiten eines Schreibauftrags wird auch die
+Größenregel des Bootloaders geprüft: Verzeichnisbereich plus zugeordnete
+Dateisektoren müssen die gesamte LFI-Größe ergeben. Unzugeordnete Lücken hinter
+Dateien werden der vorhergehenden Datei zugerechnet und mit Nullbytes gefüllt;
+Dateilängen und Prüfsummen werden entsprechend erneuert. Bei einem gültigen
+v7-Katalog wird auch dessen gespeicherte Dateigröße angepasst, falls COMMON.STY
+zusätzliches Padding erhält. Bilder, Programmcode und Quelldatei bleiben erhalten.
+Reparaturen werden im Protokoll bzw.
+Paketmanifest dokumentiert. Bereits gültige Images bleiben bytegleich.
+
+Das gilt auch nach späteren Ergänzungen oder Löschungen von Ressourcen.
+Beschädigte Prüfsummen, überlappende Dateien oder ungültige Adressen werden
+abgewiesen: Daraus lässt sich der beabsichtigte Inhalt nicht rekonstruieren.
+Gespeicherte Gerätedumps bleiben unveränderte Messdaten.
 
 ## Speichern
 
@@ -125,9 +150,11 @@ Er verwendet den vorhandenen Komponenten-Flasher einschließlich der getrennten
 BREC-Übertragungsvorbereitung. Gespeicherte BREC-BINs sind normale, fertige Images,
 keine für den NAND-Treiber vorab veränderten Transportdateien.
 
-Nur ausgewählte Pixelbereiche und notwendige LFI-Prüfsummen ändern sich.
-Dateigrößen, Bildtabellen, Ressourcenanzahl, Übersetzungen und Bootcode bleiben
-erhalten. Alle 148 LFI-Dateiprüfsummen werden geprüft. Ein unbestätigter
+Bildänderungen betreffen die ausgewählten Pixelbereiche und Prüfsummen;
+ein ausdrücklich gewähltes Screensaver-Upgrade ergänzt dessen Code und Katalog.
+Eine nötige Padding-Korrektur aktualisiert außerdem die LFI-Dateilängen.
+Alle vorhandenen Dateiprüfsummen werden geprüft (im aktuellen Kandidaten 148).
+Ein unbestätigter
 Schreibbefehl stoppt ohne automatische Wiederholung. Neustart erst nach
 erfolgreichem Rücklesen. Browser und Windows-App teilen die bestehende Gerätesperre.
 

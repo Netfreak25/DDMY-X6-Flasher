@@ -11,7 +11,7 @@ for (let index = 0; index < 148; index++) {
   const pos = 0x200 + index * 32, offset = 0x2000 + index * 512;
   candidate.set(new TextEncoder().encode(`T${String(index).padStart(7, '0')}BIN`), pos);
   header.setUint32(pos + 0x10, offset / 512, true);
-  header.setUint32(pos + 0x14, 4, true);
+  header.setUint32(pos + 0x14, index === 147 ? candidate.length - offset : 512, true);
   header.setUint32(offset, index + 1, true);
   header.setUint32(pos + 0x1c, index + 1, true);
 }

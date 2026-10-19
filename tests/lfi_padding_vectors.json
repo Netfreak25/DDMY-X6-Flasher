@@ -1,0 +1,13 @@
+[
+  {"name":"valid","size":9216,"entries":[["A.BIN",8192,512,305419896],["B.BIN",8704,512,2271560481]],"lengths":[512,512]},
+  {"name":"short-program","size":9728,"entries":[["USER2.AP",8192,512,305419896],["NEXT.BIN",9216,512,2271560481]],"lengths":[1024,512]},
+  {"name":"unaligned-short-length","size":9216,"entries":[["A.BIN",8192,4,305419896],["B.BIN",8704,4,2271560481]],"lengths":[512,512]},
+  {"name":"deleted-middle-file","size":9728,"entries":[["A.BIN",8192,512,305419896],["C.BIN",9216,512,2271560481]],"padding":[[8704,9216,85]],"lengths":[1024,512]},
+  {"name":"deleted-last-file","size":9728,"entries":[["A.BIN",8192,512,305419896]],"padding":[[8704,9728,85]],"lengths":[1536]},
+  {"name":"inserted-file","size":9728,"entries":[["A.BIN",8192,512,305419896],["NEW.BIN",8704,512,12345],["C.BIN",9216,512,2271560481]],"lengths":[512,512,512]},
+  {"name":"directory-order-independent","size":9216,"entries":[["B.BIN",8704,512,2271560481],["A.BIN",8192,512,305419896]],"lengths":[512,512]},
+  {"name":"overlap","size":9216,"entries":[["A.BIN",8192,1024,305419896],["B.BIN",8704,512,2271560481]],"error":true},
+  {"name":"leading-gap","size":9216,"entries":[["A.BIN",8704,512,305419896]],"error":true},
+  {"name":"empty-directory","size":9216,"entries":[],"error":true},
+  {"name":"common-catalog-extension","size":12288,"entries":[["COMMON.STY",8192,2048,422794578],["B.BIN",11264,1024,305419896]],"catalog":true,"lengths":[3072,1024]}
+]

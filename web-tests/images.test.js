@@ -4,13 +4,19 @@ import {files, profile, payload} from './fixtures.js';
 import {AREA_FILES, selectImages, identify} from '../lib/images.js';
 import {packBackup} from '../lib/archive.js';
 import {prepareBrecTransfer} from '../lib/driver.js';
-import {view} from '../lib/formats.js';
+import {view, validateLfi, wordSum, compareBytes} from '../lib/formats.js';
 import {X6Operations} from '../lib/workflows.js';
 
 const source = (data, name = 'unrelated-name.bin') => ({name, size: data.length, arrayBuffer: async () => data.slice().buffer});
 const inputs = Object.fromEntries(Object.entries(AREA_FILES).map(([area, names]) => {
   const data = files[names[0]].slice();
   data[area === 'mbrec' ? 0x100 : area === 'brec' ? 0x11000 : data.length - 1] ^= 1;
+  if (area === 'lfi') {
+    const entry = [...validateLfi(files[names[0]], profile).values()].at(-1), header = view(data);
+    header.setUint32(entry.directoryOffset + 28, wordSum(data.subarray(entry.offset, entry.offset + entry.size), 4), true);
+    header.setUint32(16, wordSum(data.subarray(512, 8192), 4), true);
+    header.setUint16(510, wordSum(data.subarray(0, 510), 2), true);
+  }
   return [area, data];
 }));
 
@@ -108,6 +114,7 @@ test('component comparison counts both boot copies and never writes', async () =
   const selected = await selectImages(Object.values(inputs).map(data => source(data)), profile), f = fixture();
   const result = await f.operations.verifySelection(selected);
   assert.equal(result.identical, false);
-  assert.equal(result.different, 5);
+  const expected = Object.entries(AREA_FILES).reduce((sum, [area, names]) => sum + names.reduce((count, name) => count + compareBytes(inputs[area], files[name]).different, 0), 0);
+  assert.equal(result.different, expected);
   assert.deepEqual(f.calls, ['read-lfi', 'read-boot0', 'read-boot1']);
 });

@@ -42,7 +42,8 @@ def fixture():
         pos = 512 + index * 32
         base, ext = name.split(".")
         raw[pos:pos + 11] = (base.ljust(8) + ext).encode("ascii")
-        struct.pack_into("<II", raw, pos + 16, offset // 512, len(content))
+        allocated = len(raw) - offset if index == lfi.X6_FILE_COUNT - 1 else (len(content) + 511) // 512 * 512
+        struct.pack_into("<II", raw, pos + 16, offset // 512, allocated)
         struct.pack_into("<I", raw, pos + 28, lfi.word_sum(content, 4))
         raw[offset:offset + len(content)] = content
         offset += (len(content) + 511) // 512 * 512

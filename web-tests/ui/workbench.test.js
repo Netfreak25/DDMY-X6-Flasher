@@ -10,7 +10,8 @@ import { packBackup } from '../../lib/archive.js';
 import { profile, files as original, payload } from '../fixtures.js';
 import { artworkFixture, config as artworkConfig } from '../artwork-fixture.js';
 import { Artwork } from '../../lib/artwork.js';
-import { sha256 } from '../../lib/formats.js';
+import { sha256, validateLfi, view, wordSum } from '../../lib/formats.js';
+import { patchFixture } from '../screensaver-patch-fixture.js';
 
 let server, browser, origin;
 const artworkData = await artworkFixture();
@@ -393,6 +394,35 @@ test('incomplete dump remains downloadable and an unverified mapping requires th
   await context.close();
 });
 
+test('restore picker repairs unassigned padding and retains authenticated source bytes', async () => {
+  const raw = original['lfi.bin'].slice(), header = view(raw);
+  header.setUint32(0x214, 4, true);
+  raw[0x2004] = 37;
+  header.setUint32(0x10, wordSum(raw.subarray(0x200, 0x2000), 4), true);
+  header.setUint16(0x1fe, wordSum(raw.subarray(0, 0x1fe), 2), true);
+  const digest = await sha256(raw);
+  const manifest = JSON.parse(new TextDecoder().decode(original['manifest.json']));
+  manifest.files['lfi.bin'].sha256 = digest;
+  const source = {...original, 'lfi.bin': raw,
+    'manifest.json': new TextEncoder().encode(JSON.stringify(manifest))};
+  const archivePath = 'private_dumps/web-tests/padding.x6backup.zip';
+  await writeFile(archivePath, packBackup(source, manifest));
+  const {page, context, errors} = await pageFixture();
+  await page.locator('#backup-file').setInputFiles(archivePath);
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Sicherung ist vollständig.');
+  const events = JSON.parse(await page.locator('#report').textContent());
+  const repair = events.find(event => event.event === 'lfi_padding_normalized');
+  assert.equal(repair.changes[0].padding_bytes, 508);
+  assert.equal(repair.changes[0].cleared_nonzero_bytes, 1);
+  await connect(page);
+  await page.locator('#restore').click();
+  await page.locator('#confirm-go').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vollständig zurückgeschrieben und verifiziert.');
+  assert.equal(await sha256(raw), digest);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('verified boot mapping permits normal restore and requires complete readback', async () => {
   const {page, context, errors} = await pageFixture();
   await connect(page);
@@ -489,10 +519,31 @@ test('artwork saves/reopens paired BINs and complete package without hardware; s
   await context.close();
 });
 
+test('screensaver patch is opt-in, preserves picture edits and cannot run twice', async () => {
+  const fixture = await patchFixture();
+  await writeFile('private_dumps/web-tests/optional-screensaver.bin', fixture.versions.install);
+  const {page, context, errors, apiCalls} = await pageFixture(true, artworkFiles, fixture.profile);
+  await page.route('**/tools/x6_artwork.json', route => route.fulfill({json: fixture.config}));
+  await page.reload(); await openArtwork(page, 'optional-screensaver.bin');
+  await page.locator('[data-slot="background-02"]').click();
+  assert.match(await page.locator('#artwork-screensaver-info').textContent(), /empfehlen/);
+  assert.equal(await page.locator('#artwork-save').isDisabled(), true);
+  assert.equal(await page.locator('#artwork-screensaver').isEnabled(), true);
+  await replaceArtwork(page, 'shutdown');
+  await page.locator('#artwork-screensaver').click();
+  await page.waitForFunction(() => document.querySelector('#artwork-screensaver').textContent === 'Screensaver bereits aktuell');
+  assert.equal(await page.locator('#artwork-screensaver').isDisabled(), true);
+  assert.equal(await page.locator('[data-slot="shutdown"]').evaluate(element => element.classList.contains('changed')), true);
+  assert.equal(await page.locator('#artwork-save').isEnabled(), true);
+  assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('contour editor previews exported pixels through rotation, apply, cancel and both resets', async () => {
   const {page, context, errors, apiCalls} = await pageFixture(true, artworkFiles, artworkData.profile);
   const config = JSON.parse(JSON.stringify(artworkConfig));
-  config.screensaver.supported_code = {'T0000003.BIN': await sha256(new Uint8Array(4))};
+  const entry = validateLfi(artworkFiles['lfi.bin'], artworkData.profile).get('T0000003.BIN');
+  config.screensaver.supported_code = {'T0000003.BIN': await sha256(artworkFiles['lfi.bin'].subarray(entry.offset, entry.offset + entry.size))};
   await page.route('**/tools/x6_artwork.json', route => route.fulfill({json: config}));
   await page.reload(); await openArtwork(page);
   assert.equal(await page.locator('.artwork-tile.changed').count(), 0);

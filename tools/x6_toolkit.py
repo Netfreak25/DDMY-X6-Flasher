@@ -350,17 +350,15 @@ def start_fwsc(backend: ActionsBackend) -> None:
         raise ToolkitError(f"X6 flash driver rejected NAND record: {status[:32].hex()}")
 
 
-def validate_lfi(path: Path, profile: Profile) -> dict[str, object]:
+def validate_lfi(path: Path, profile: Profile, *, allow_padding: bool = False) -> dict[str, object]:
     """Check exact size, structure and every embedded file checksum."""
     if path.stat().st_size != profile.lfi_size:
         raise ToolkitError(f"wrong X6 LFI size: {path.stat().st_size}")
     image = path.read_bytes()
     try:
-        entries = x6_lfi.lfi_entries(image)
+        entries = x6_lfi.lfi_entries(x6_lfi.normalize_lfi(image) if allow_padding else image)
     except ValueError as exc:
         raise ToolkitError(f"invalid X6 LFI: {exc}") from exc
-    if len(entries) != x6_lfi.X6_FILE_COUNT:
-        raise ToolkitError(f"wrong X6 LFI inventory: {len(entries)} files")
     return {"size": len(image), "sha256": hashlib.sha256(image).hexdigest(), "files": len(entries)}
 
 
@@ -426,7 +424,7 @@ def write_manifest(directory: Path, manifest: dict[str, object]) -> None:
     temporary.replace(destination)
 
 
-def verify_bundle(directory: Path, profile: Profile) -> dict[str, Any]:
+def verify_bundle(directory: Path, profile: Profile, *, allow_padding: bool = False) -> dict[str, Any]:
     """Validate every file in a complete X6 restore bundle."""
     try:
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
@@ -445,7 +443,7 @@ def verify_bundle(directory: Path, profile: Profile) -> dict[str, Any]:
             raise ToolkitError(f"backup file missing: {name}")
         if not isinstance(records[name], dict):
             raise ToolkitError(f"invalid backup manifest record: {name}")
-        actual = validate_lfi(path, profile) if name == "lfi.bin" else validate_boot(
+        actual = validate_lfi(path, profile, allow_padding=allow_padding) if name == "lfi.bin" else validate_boot(
             path, "mbrec" if name.startswith("mbrec") else "brec", profile,
         )
         if actual["size"] != records[name].get("size") or actual["sha256"] != records[name].get("sha256"):

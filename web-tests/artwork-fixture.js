@@ -27,7 +27,8 @@ export async function artworkFixture(size = 3 * 1024 * 1024) {
     }
     const pos = 512 + index * 32, [base, ext] = name.split('.');
     lfi.set(new TextEncoder().encode(base.padEnd(8) + ext), pos);
-    input.setUint32(pos + 16, offset / 512, true); input.setUint32(pos + 20, content.length, true);
+    const allocated = index === 147 ? lfi.length - offset : Math.ceil(content.length / 512) * 512;
+    input.setUint32(pos + 16, offset / 512, true); input.setUint32(pos + 20, allocated, true);
     input.setUint32(pos + 28, wordSum(content, 4), true); lfi.set(content, offset);
     offset += Math.ceil(content.length / 512) * 512;
   }

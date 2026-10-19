@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -93,8 +92,9 @@ class NativeOperations:
         if image.stat().st_size != self.profile.lfi_size:
             raise tk.ToolkitError("Die Datei hat nicht die erwartete X6-Firmwaregröße.")
         staged = self.log.directory / "candidate.bin"
-        shutil.copyfile(image, staged)
-        tk.validate_lfi(staged, self.profile)
+        changes = archive.stage_lfi(image, staged, self.profile)
+        if changes:
+            self.log.event("lfi_normalized", changes=changes, sha256=tk.sha256_file(staged))
         return staged
 
     def inspect(self, sources: tuple[Path, ...]) -> dict:

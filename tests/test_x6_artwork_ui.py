@@ -1,5 +1,6 @@
 """Native editor UI regression tests, with hardware access explicitly forbidden."""
 
+import struct
 import sys
 import tkinter as tk
 import unittest
@@ -8,6 +9,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import test_x6_artwork as fixtures
+import test_x6_screensaver_patch as patch_fixtures
 import x6_artwork as art
 import x6_artwork_ui as ui
 import x6_helper as helper
@@ -49,6 +51,49 @@ class EditorWindowTests(unittest.TestCase):
         self.editor.loaded(art.Artwork(selected, self.data.profile))
         self.assertEqual(str(self.editor.tiles["boot-startup"].cget("state")), "disabled")
         self.assertIn("BREC nicht geladen", self.editor.info.get())
+
+    def test_screensaver_upgrade_is_optional_preserves_edits_and_disables_second_patch(self):
+        """A UI action alone activates code changes; selecting wallpapers only explains it."""
+        _components, _device, config, versions = patch_fixtures.fixture()
+        path = self.data.selection.files["lfi"]
+        path.write_bytes(versions["install"])
+        self.data.selection.hashes["lfi"] = art.tk.sha256_file(path)
+        with mock.patch.object(art, "catalog", return_value=config):
+            model = art.Artwork(self.data.selection, self.data.profile)
+        self.editor.loaded(model)
+        self.editor.select("background-02")
+        self.assertIn("empfehlen", self.editor.patch_info.get())
+        self.assertFalse(model.has_changes)
+        self.assertIsNone(model.patched_lfi)
+        self.assertEqual(str(self.editor.patch_button.cget("state")), "normal")
+        model.replace("shutdown", self.data.red)
+        pixels = model.pixels("shutdown")
+        self.editor.patch_button.invoke()
+        self.finish()
+        self.assertTrue(model.contour)
+        self.assertEqual(model.patch_state, "current")
+        self.assertEqual(model.pixels("shutdown"), pixels)
+        self.assertEqual(str(self.editor.patch_button.cget("state")), "disabled")
+        self.assertEqual(model.originals["lfi"], versions["install"])
+
+    def test_repaired_import_can_be_saved_without_editing_any_picture(self):
+        raw = bytearray(self.data.components["lfi"])
+        entry = list(art.lfi.lfi_entries(raw).values())[-1]
+        struct.pack_into("<I", raw, entry.directory_offset + 20, 512)
+        raw = patch_fixtures.sums(raw)
+        source = self.data.base / "gap.bin"
+        source.write_bytes(raw)
+        selection = art.images.select_images((source,), self.data.base / "repair", self.data.profile)
+        model = art.Artwork(selection, self.data.profile)
+        self.editor.loaded(model)
+        self.assertTrue(model.has_changes)
+        self.assertEqual(model.changed_areas, ("lfi",))
+        self.assertEqual(str(self.editor.save_button.cget("state")), "normal")
+        self.assertIn("Dateizuordnung korrigiert", self.editor.info.get())
+        self.assertIsNone(model.patched_lfi)
+        saved = model.stage(self.data.base / "export")
+        self.assertEqual(saved.files["lfi"].read_bytes(), self.data.components["lfi"])
+        self.assertEqual(source.read_bytes(), raw)
 
     def test_cancel_crop_reset_and_dirty_close(self):
         self.editor.select("startup")

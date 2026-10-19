@@ -76,6 +76,13 @@ laden. 11 Hintergründe, normales Startbild, Ausschaltbild und frühes BREC-Star
 können ersetzt, zugeschnitten und zurückgesetzt werden. Die Startbilder sind
 bei geladenem LFI + BREC standardmäßig gekoppelt.
 
+Ein unterstütztes älteres Image kann über die ausdrückliche
+Screensaver-Option auf v7 aktualisiert werden. Bereits aktuelle Firmware wird
+erkannt. Neue Hintergrundbilder erhalten dann automatisch den dezenten Verlauf;
+bei v7 bleibt der erste Platz fest schwarz. Das Upgrade ist freiwillig.
+Import und Export prüfen zusätzlich die LFI-Größenzuordnung und korrigieren
+unzugeordnetes Padding in einer Arbeitskopie. Originaldateien bleiben erhalten.
+
 **Geänderte BINs speichern** oder **Firmwarepaket speichern** benötigt keine
 Verbindung. **Änderungen flashen** verwendet nach Bestätigung den bestehenden
 Schreibweg für genau LFI, BREC oder beide; MBREC bleibt unverändert.

@@ -12,6 +12,7 @@ import x6_archive as archive
 import x6_images as images
 import x6_lfi as lfi
 import x6_screensaver as screensaver
+import x6_screensaver_patch as screen_patch
 import x6_toolkit as tk
 from x6_brec_transfer import validate_brec
 
@@ -61,8 +62,6 @@ def locate(components: dict[str, bytes], profile: tk.Profile, config: dict) -> d
         if len(data) != profile.lfi_size:
             raise ValueError("Falsche X6-LFI-Größe.")
         entries = lfi.lfi_entries(data)
-        if len(entries) != lfi.X6_FILE_COUNT:
-            raise ValueError("Das LFI muss 148 Dateien enthalten.")
         ordered = sorted(entries.values(), key=lambda item: item.data_offset)
         previous = lfi.LFI_DIRECTORY_END
         for entry in ordered:
@@ -97,6 +96,10 @@ def locate(components: dict[str, bytes], profile: tk.Profile, config: dict) -> d
             if any(index != slot["index"] and start < offset + size and end > offset for index, (start, end) in enumerate(ranges)):
                 raise ValueError("Der Bildplatz überlappt eine andere Ressource.")
             start = entry.data_offset + offset
+            if (slot["file"] == "COMMON.STY" and slot["index"] == config["screensaver"]["background_base"]
+                    and raw[screensaver.CATALOG_OFFSET:screensaver.CATALOG_OFFSET + 4] == b"X6SC"):
+                screensaver.catalog_offsets(raw)
+                slot = {**slot, "fixed_black": True}
             result[slot["id"]] = PixelRange(start, start + size, slot)
     if "brec" in components:
         data = components["brec"]
@@ -118,6 +121,7 @@ class Artwork:
 
     def __init__(self, selection: images.Selection, profile: tk.Profile):
         self.profile, self.selection, self.config = profile, selection, catalog()
+        self.normalization = tuple(getattr(selection, "normalization", ()))
         self.originals = {area: path.read_bytes() for area, path in selection.files.items()}
         for area, data in self.originals.items():
             if hashlib.sha256(data).hexdigest() != selection.hashes[area]:
@@ -129,16 +133,48 @@ class Artwork:
         self.coupled = all(key in self.ranges for key in self.config["startup_ids"])
         data = self.originals.get("lfi")
         self.contour = bool(data and screensaver.supported(data, lfi.lfi_entries(data), self.config.get("screensaver")))
+        self.patch_state = screen_patch.inspect(data, self.config)
+        self.patched_lfi: bytes | None = None
+
+    @property
+    def has_changes(self) -> bool:
+        return bool(self.edits) or self.patched_lfi is not None or bool(self.normalization)
+
+    def apply_screensaver(self) -> None:
+        """Opt in explicitly; preserve source images and all pending image edits."""
+        if self.patch_state == "current":
+            return
+        data = screen_patch.apply(self.originals.get("lfi"), self.config)
+        # Validate and prepare all work before changing the editor state.
+        ranges = locate({**self.originals, "lfi": data}, self.profile, self.config)
+        edits = dict(self.edits)
+        profile = self.config["screensaver"]
+        for key, raw in edits.items():
+            if ranges[key].slot.get("fixed_black") and any(raw):
+                raise ValueError("Vor dem Patch die Änderung am festen schwarzen Platz zurücksetzen.")
+            slot = self.ranges[key].slot
+            index = slot.get("index", -1) - profile["background_base"] + 1
+            if slot.get("file") == "COMMON.STY" and 1 <= index <= profile["background_count"]:
+                edits[key] = screensaver.process(raw, profile, index)
+        self.patched_lfi, self.edits = data, edits
+        self.ranges = ranges
+        self.contour, self.patch_state = True, "current"
 
     def targets(self, key: str) -> list[str]:
         if key not in self.ranges:
             raise ValueError("Dieser Bildplatz ist nicht geladen.")
+        if self.ranges[key].slot.get("fixed_black"):
+            raise ValueError("Schwarz ist der feste erste Screensaver-Platz.")
         return self.config["startup_ids"] if self.coupled and key in self.config["startup_ids"] else [key]
 
     def pixels(self, key: str, original: bool = False) -> bytes:
         item = self.ranges[key]
-        return (self.originals[item.slot["area"]][item.start:item.end]
-                if original or key not in self.edits else self.edits[key])
+        if not original and key in self.edits:
+            return self.edits[key]
+        source = self.originals[item.slot["area"]]
+        if not original and item.slot["area"] == "lfi" and self.patched_lfi is not None:
+            source = self.patched_lfi
+        return source[item.start:item.end]
 
     def rgb(self, key: str, original: bool = False) -> bytes:
         return decode_rgb565(self.pixels(key, original), self.ranges[key].slot["endian"])
@@ -180,11 +216,14 @@ class Artwork:
 
     @property
     def changed_areas(self) -> tuple[str, ...]:
-        return tuple(area for area in ("brec", "lfi") if any(self.ranges[key].slot["area"] == area for key in self.edits))
+        return tuple(area for area in ("brec", "lfi") if (area == "lfi" and (self.patched_lfi is not None or self.normalization))
+                     or any(self.ranges[key].slot["area"] == area for key in self.edits))
 
     def build(self) -> dict[str, bytes]:
         """Patch pixels and affected checksums only, then independently validate."""
         output = dict(self.originals)
+        if self.patched_lfi is not None:
+            output["lfi"] = self.patched_lfi
         for area in self.changed_areas:
             data = bytearray(output[area])
             changed_files = set()
@@ -203,13 +242,15 @@ class Artwork:
                 struct.pack_into("<I", data, 0x10, lfi.word_sum(data[lfi.LFI_DIRECTORY_START:lfi.LFI_DIRECTORY_END], 4))
                 struct.pack_into("<H", data, 0x1FE, lfi.word_sum(data[:0x1FE], 2))
             output[area] = bytes(data)
+        if "lfi" in output:
+            output["lfi"] = lfi.normalize_lfi(output["lfi"])
         locate(output, self.profile, self.config)
         return output
 
     def stage(self, directory: Path) -> images.Selection:
         """Create a checked selection containing precisely the changed components."""
-        if not self.edits:
-            raise ValueError("Keine Bilder geändert.")
+        if not self.has_changes:
+            raise ValueError("Keine Änderungen vorbereitet.")
         output = self.build()
         directory.mkdir(parents=True, exist_ok=False)
         files = {}
@@ -241,7 +282,7 @@ class Artwork:
 
     def save_package(self, destination: Path, staging: Path) -> None:
         """Export an edited schema-1 package; source MBREC stays byte-identical."""
-        if set(self.originals) != set(images.AREA_FILES) or not self.edits:
+        if set(self.originals) != set(images.AREA_FILES) or not self.has_changes:
             raise ValueError("Ein bearbeitetes Paket benötigt MBREC, BREC und LFI.")
         if destination.exists():
             raise ValueError("Bitte einen neuen Paketnamen verwenden.")
@@ -256,6 +297,10 @@ class Artwork:
         manifest = {"schema": 1, "model": self.profile.model, "nand_id": self.profile.nand_id.hex(),
                     "status": "complete", "kind": "edited-firmware", "files": records,
                     "edited_images": list(self.edits), "steps": {"artwork": {"status": "ok"}}}
+        if self.patched_lfi is not None:
+            manifest.update(screensaver_patch=self.config["screensaver"]["revision"], hardware_verified=False)
+        if self.normalization:
+            manifest["lfi_normalization"] = {"changes": list(self.normalization)}
         if self.selection.serial:
             manifest["device_serial"] = self.selection.serial
         tk.write_manifest(staging, manifest)

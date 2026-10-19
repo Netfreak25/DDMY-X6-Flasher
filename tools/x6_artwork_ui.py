@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox, ttk
 import x6_artwork as art
 import x6_images as images
 import x6_picture as picture
+import x6_screensaver_patch as screen_patch
 import x6_toolkit as toolkit
 from PIL import Image, ImageTk
 
@@ -144,6 +145,12 @@ class ArtworkWindow:
         self.coupled = tk.BooleanVar(value=False)
         self.coupling = ttk.Checkbutton(panel, text="Startbilder gemeinsam ändern", variable=self.coupled, command=self.toggle_coupling)
         self.coupling.pack(anchor="w")
+        screen_row = ttk.Frame(panel)
+        screen_row.pack(fill="x", pady=(8, 0))
+        self.patch_button = self.button(screen_row, "Screensaver nachrüsten", self.patch_screensaver)
+        self.patch_button.pack(side="right", padx=(12, 0))
+        self.patch_info = tk.StringVar()
+        ttk.Label(screen_row, textvariable=self.patch_info, wraplength=650).pack(side="left", fill="x", expand=True)
         body = ttk.Frame(panel)
         body.pack(fill="both", expand=True, pady=12)
         gallery_frame = ttk.Frame(body)
@@ -228,10 +235,21 @@ class ArtworkWindow:
         for button in self.controls:
             button.configure(state="disabled" if self.host.busy else "normal")
         ready = self.model is not None and not self.host.busy
-        changed = ready and bool(self.model.edits)
+        changed = ready and self.model.has_changes
+        state = self.model.patch_state if self.model else "missing"
+        can_patch = state in ("install", "update")
+        self.patch_button.configure(state="normal" if ready and can_patch else "disabled",
+                                    text=screen_patch.LABELS[state] if state in ("install", "update", "current") else "Screensaver nachrüsten")
+        notice = screen_patch.LABELS[state]
+        if self.model and self.model.patched_lfi is not None:
+            notice = "Screensaver-Patch für den Export vorbereitet. Auf Hardware unverifizierter Stand."
+        elif self.active and self.active.startswith("background-") and not self.model.contour:
+            notice += " Für gut lesbare Schrift auf eigenen Bildern empfehlen wir den passenden Patch. Die Bearbeitung ist auch ohne Patch möglich."
+        self.patch_info.set(notice)
+        fixed = ready and self.active and self.model.ranges[self.active].slot.get("fixed_black")
         for button in (self.replace_button, self.edit_button):
-            button.configure(state="normal" if ready and self.active else "disabled")
-        can_reset = ready and (self.active in self.model.edits or self.model.contour)
+            button.configure(state="normal" if ready and self.active and not fixed else "disabled")
+        can_reset = ready and not fixed and (self.active in self.model.edits or self.model.contour)
         self.reset_button.configure(state="normal" if can_reset else "disabled")
         for button in (self.save_button, self.package_button, self.flash_button):
             button.configure(state="normal" if changed else "disabled")
@@ -267,7 +285,7 @@ class ArtworkWindow:
         self.offline("Bilder laden", load, self.loaded)
 
     def loaded(self, model):
-        self.model, self.sources, self.dirty = model, {}, False
+        self.model, self.sources, self.dirty = model, {}, model.has_changes
         self.active = next(iter(model.ranges))
         self.coupled.set(model.coupled)
         self.refresh()
@@ -310,6 +328,8 @@ class ArtworkWindow:
             return
         areas = " + ".join(area.upper() for area in self.model.originals)
         message = f"{areas} geladen · {len(self.model.edits)} Bildplätze geändert"
+        if self.model.normalization:
+            message += " · LFI-Dateizuordnung korrigiert; als neue Datei speichern."
         if not all(key in self.model.ranges for key in self.config["startup_ids"]):
             message += " · Nur frühes Startbild verfügbar" if "brec" in self.model.originals else " · Frühes Startbild fehlt (BREC nicht geladen)"
         self.info.set(message)
@@ -340,6 +360,13 @@ class ArtworkWindow:
     def toggle_coupling(self):
         self.model.coupled = self.coupled.get()
 
+    def patch_screensaver(self):
+        """Only this explicit button opts into code and background changes."""
+        def done(_result):
+            self.dirty = self.model.has_changes
+            self.refresh()
+        self.offline("Screensaver vorbereiten", self.model.apply_screensaver, done)
+
     def replace(self):
         path = filedialog.askopenfilename(parent=self.window, title="Ersatzbild wählen", filetypes=[("Bilder", "*.png *.jpg *.jpeg *.webp")])
         if path:
@@ -353,7 +380,7 @@ class ArtworkWindow:
             self.model.replace(key, rgb)
             for target in targets:
                 self.sources[target] = (original, settings)
-            self.dirty = bool(self.model.edits)
+            self.dirty = self.model.has_changes
             self.refresh()
 
         self.crop_dialog = CropDialog(self.window, source, self.config, apply, options,
@@ -369,7 +396,7 @@ class ArtworkWindow:
         for target in self.model.targets(self.active):
             self.sources.pop(target, None)
         self.model.reset(self.active)
-        self.dirty = bool(self.model.edits)
+        self.dirty = self.model.has_changes
         self.refresh()
 
     def saved(self, _result):
@@ -397,6 +424,8 @@ class ArtworkWindow:
 
     def flash(self):
         labels = [slot["label"] for slot in self.config["slots"] if slot["id"] in self.model.edits]
+        if self.model.patched_lfi is not None:
+            labels.append("Screensaver-Patch")
         self.offline("Geänderte Firmwarebereiche prüfen", lambda: self.model.stage(toolkit.new_run("artwork-flash").directory / "candidate"),
                      lambda selection: self.host.flash(selection, labels))
 

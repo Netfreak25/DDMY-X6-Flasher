@@ -32,7 +32,8 @@ def synthetic_lfi() -> bytes:
     for index in range(x6_lfi.X6_FILE_COUNT):
         position, offset = 0x200 + index * 32, 0x2000 + index * 512
         data[position:position + 11] = f"T{index:07d}BIN".encode("ascii")
-        struct.pack_into("<II", data, position + 0x10, offset // 512, 4)
+        length = len(data) - offset if index == x6_lfi.X6_FILE_COUNT - 1 else 512
+        struct.pack_into("<II", data, position + 0x10, offset // 512, length)
         struct.pack_into("<I", data, offset, index + 1)
         struct.pack_into("<I", data, position + 0x1C, index + 1)
     struct.pack_into("<I", data, 0x10, x6_lfi.word_sum(data[0x200:0x2000], 4))
@@ -135,6 +136,12 @@ class NativeTests(unittest.TestCase):
         for area, offset in (("mbrec", 0x100), ("brec", 0x11000), ("lfi", len(self.image) - 1)):
             data = bytearray(self.files[images.AREA_FILES[area][0]])
             data[offset] ^= 1
+            if area == "lfi":
+                entry = list(x6_lfi.lfi_entries(self.image).values())[-1]
+                struct.pack_into("<I", data, entry.directory_offset + 28,
+                                 x6_lfi.word_sum(data[entry.data_offset:entry.data_offset + entry.length], 4))
+                struct.pack_into("<I", data, 16, x6_lfi.word_sum(data[512:8192], 4))
+                struct.pack_into("<H", data, 510, x6_lfi.word_sum(data[:510], 2))
             path = self.base / f"arbitrary-{len(paths)}.bin"
             path.write_bytes(data)
             paths[area] = path
@@ -239,7 +246,9 @@ class NativeTests(unittest.TestCase):
         with self.simulated():
             compared = self.ops.compare_selection(self.ops.selection)
         self.assertFalse(compared["identical"])
-        self.assertEqual(compared["different"], 5)
+        expected = sum(sum(a != b for a, b in zip(paths[area].read_bytes(), self.files[name], strict=True))
+                       for area in paths for name in images.AREA_FILES[area])
+        self.assertEqual(compared["different"], expected)
         self.assertFalse(any(call.startswith("write_") for call in self.calls))
 
     def test_flash_saves_checked_backup_before_writes_and_full_readback(self):

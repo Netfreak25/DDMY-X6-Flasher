@@ -1,5 +1,19 @@
 # Änderungen
 
+## 0.3.0-beta.6 – lokal, unveröffentlicht
+
+- Optionales Nachrüsten und Aktualisieren des Screensavers auf v7 in Windows
+  und Web; bereits aktuelle Versionen werden nicht doppelt gepatcht.
+- Erkennt Varianten mit und ohne Hello X6, erhält dessen Menü und Launcher.
+- Hintergrundaufbereitung nach Zuschnitt/Drehung mit dem vorhandenen dezenten
+  Verlauf; der schwarze v7-Platz ist vor wirkungslosen Bildänderungen geschützt.
+- LFI-Prüfung umfasst die Bootloader-Größenregel. Import, Export und
+  Schreibvorbereitung ordnen Lücken als Nullpadding zu und aktualisieren
+  Dateilängen und Prüfsummen. Quelldateien und benannte Inhalte bleiben erhalten.
+- Alle vorhandenen Dateien werden geprüft; die Prüfung setzt nicht mehr
+  unveränderlich 148 Verzeichniseinträge voraus.
+- Keine Firmware im App-Paket; kein Gerätezugriff bei Entwicklung und Tests.
+
 ## 0.3.0-beta.3
 
 - Zusätzlicher Windows-Installer mit App-Icon, Startmenüeintrag, optionaler
