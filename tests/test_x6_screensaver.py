@@ -45,12 +45,12 @@ class ScreensaverTests(unittest.TestCase):
         model = fixture.editor
         self.assertFalse(model.contour)
         self.assertEqual(model.build(), fixture.components)
-        model.replace("background-01", fixture.red)
-        self.assertEqual(model.rgb("background-01"), fixture.red)
-        model.reset("background-01")
+        model.replace("background-02", fixture.red)
+        self.assertEqual(model.rgb("background-02"), fixture.red)
+        model.reset("background-02")
         model.contour = True  # Synthetic fixture; code recognition tested separately.
         source = bytes((255, 255, 255)) * 240 * 320
-        for key in ("background-01", "background-02", "background-11"):
+        for key in ("background-02", "background-03", "background-11"):
             preview = model.preview_rgb(key, source)
             model.replace(key, source)
             self.assertEqual(model.rgb(key), preview)
@@ -60,8 +60,8 @@ class ScreensaverTests(unittest.TestCase):
         for key in ("startup", "boot-startup", "shutdown"):
             self.assertEqual(model.preview_rgb(key, source), source)
         original = copy.deepcopy(model.originals)
-        model.reset("background-01")
-        self.assertNotIn("background-01", model.edits)
+        model.reset("background-02")
+        self.assertNotIn("background-02", model.edits)
         self.assertEqual(model.originals, original)
         saved = model.stage(fixture.base / "processed")
         reopened = art.Artwork(saved, fixture.profile)

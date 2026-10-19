@@ -260,18 +260,27 @@ class NativeOperations:
                 ("Player normal gestartet." if normal else "Neustart noch nicht bestätigt."),
                 "normal_mode": normal, "warning": not normal}
 
-    def dump(self, destination: Path) -> dict:
+    def dump(self, destination: Path, components: tuple[str, ...] = tk.BUNDLE_FILES) -> dict:
+        """Read selected regions once; intentional partial sets remain distinguishable."""
+        if not components or len(set(components)) != len(components) or any(name not in tk.BUNDLE_FILES for name in components):
+            raise tk.ToolkitError("Bitte gültige Sicherungsbereiche auswählen.")
+        components = tuple(name for name in tk.BUNDLE_FILES if name in components)
         log = self.begin("dump")
+        capture = log.directory / "capture"
+        capture.mkdir()
         manifest = {"schema": 1, "model": self.profile.model, "nand_id": self.profile.nand_id.hex(),
-                    "status": "incomplete", "files": {}, "steps": {}}
-        tk.write_manifest(log.directory, manifest)
+                    "status": "incomplete", "requested_components": list(components), "files": {}, "steps": {}}
+        tk.write_manifest(capture, manifest)
         backend = None
         try:
             backend = self.session()
             manifest["device_serial"] = self.serial
-            reads = [("lfi", lambda: tk.read_lfi(backend, log.directory / "lfi.bin", "read_lfi")),
-                     ("brec0", lambda: tk.read_boot_copy(backend, log.directory, 0)),
-                     ("brec1", lambda: tk.read_boot_copy(backend, log.directory, 1))]
+            reads = []
+            if "lfi.bin" in components:
+                reads.append(("lfi", lambda: tk.read_lfi(backend, capture / "lfi.bin", "read_lfi")))
+            for index, pair in enumerate((("mbrec.bin", "brec0.bin"), ("mbrec_copy.bin", "brec1.bin"))):
+                if any(name in components for name in pair):
+                    reads.append((f"brec{index}", lambda index=index: tk.read_boot_copy(backend, capture, index)))
             for name, read in reads:
                 self.step(f"Sichern · {name.upper()}")
                 try:
@@ -284,29 +293,35 @@ class NativeOperations:
         except (tk.ToolkitError, OSError, subprocess.SubprocessError) as error:
             manifest["error"] = str(error)
             log.event("dump_stopped", error=str(error))
-        # Preserve all bytes actually read, including truncated/invalid files.
-        for name in tk.BUNDLE_FILES:
-            path = log.directory / name
+        for name in components:
+            path = capture / name
             if path.is_file():
                 manifest["files"][name] = {"size": path.stat().st_size, "sha256": tk.sha256_file(path)}
-        if len(manifest["steps"]) == 3 and all(item["status"] == "ok" for item in manifest["steps"].values()):
-            manifest["status"] = "complete"
-            tk.write_manifest(log.directory, manifest)
+        if not manifest.get("error") and manifest["steps"] and all(item["status"] == "ok" for item in manifest["steps"].values()):
+            manifest["status"] = "complete" if components == tk.BUNDLE_FILES else "partial"
+            tk.write_manifest(capture, manifest)
             try:
-                tk.verify_bundle(log.directory, self.profile)
+                tk.verify_bundle(capture, self.profile, allow_partial=True)
             except tk.ToolkitError as error:
                 manifest.update(status="incomplete", error=str(error))
-        tk.write_manifest(log.directory, manifest)
+        tk.write_manifest(capture, manifest)
+        success = manifest["status"] in ("complete", "partial")
         self.step("Sicherung speichern")
-        self.pending_backup = log.directory
-        archive.export_backup(log.directory, destination)
+        if len(components) == 1 and success:
+            self.pending_backup = capture / components[0]
+            archive.save_checked(self.pending_backup, destination)
+        else:
+            self.pending_backup = capture
+            if len(components) == 1:
+                destination = destination.with_suffix(".incomplete.x6backup.zip")
+            archive.export_backup(capture, destination)
         self.pending_backup = None
-        complete = manifest["status"] == "complete"
-        normal = self.reboot(backend) if complete else False
-        return {"message": ("Vollständige Sicherung gespeichert." if complete else
-                            "Unvollständige Sicherung gespeichert. Verfügbare Daten sind enthalten; kein Full Restore möglich.") +
+        normal = self.reboot(backend) if success else False
+        label = {"complete": "Vollständige Sicherung", "partial": "Gewählte Bereiche", "incomplete": "Unvollständige Sicherung"}[manifest["status"]]
+        return {"message": f"{label} gespeichert: {destination.name}." +
                 (" Player normal gestartet." if normal else " Player bleibt gegebenenfalls in ADFU."),
-                "complete": complete, "normal_mode": normal, "warning": not complete or not normal}
+                "complete": manifest["status"] == "complete", "status": manifest["status"],
+                "saved_path": str(destination), "normal_mode": normal, "warning": not success or not normal}
 
     def save_pending(self, destination: Path) -> dict:
         """Retry only a local save, never read from or write to the player."""
@@ -319,8 +334,11 @@ class NativeOperations:
         self.pending_backup = None
         return {"message": "Bereits gelesene Sicherung gespeichert. Kein erneuter Gerätezugriff."}
 
-    def restore(self, source: Path, emergency: bool = False) -> dict:
+    def restore(self, source: Path, emergency: bool = False, backup_destination: Path | None = None) -> dict:
         self.begin("restore")
+        if backup_destination is not None and (source.resolve() == backup_destination.resolve()
+                or source.is_dir() and source.resolve() in backup_destination.resolve().parents):
+            raise tk.ToolkitError("Die Rücksicherung darf das ausgewählte Quellpaket nicht überschreiben.")
         self.step("Sicherung vollständig prüfen")
         staged = self.log.directory / "source"
         manifest = archive.import_backup(source, staged, self.profile)
@@ -332,6 +350,11 @@ class NativeOperations:
         backend = self.session()
         if self.serial and manifest.get("device_serial") and self.serial.upper() != manifest["device_serial"].upper():
             raise tk.ToolkitError("Die Sicherung gehört zu einem anderen X6.")
+        if backup_destination is not None:
+            self.backup_before_boot_write(backend, backup_destination)
+            tk.start_fwsc(backend)  # Boot reads replaced the flash driver in RAM.
+        else:
+            self.log.event("backup_skipped", requested_by_user=True)
         for area, name in (("mbrec", "mbrec.bin"), ("brec", "brec0.bin"), ("lfi", "lfi.bin")):
             self.step(f"Wiederherstellen · {area.upper()}")
             tk.write_area(backend, f"write_{area}", self.profile.protocol[f"{area}_sector"], staged / name)
@@ -356,6 +379,25 @@ class NativeOperations:
         return {"message": "Alle fünf Bereiche bytegleich zurückgelesen und verifiziert. " +
                 ("Player normal gestartet." if normal else "Neustart noch nicht bestätigt."),
                 "boot_verified": True, "normal_mode": normal, "warning": not normal}
+
+    def restart(self) -> dict:
+        """Switch a freshly identified normal X6 to ADFU, then reset without flash writes."""
+        self.begin("restart")
+        self.step("Player neustarten")
+        device = tk.probe_device(self.profile)
+        if device.mode == "missing":
+            raise tk.ToolkitError("Kein X6 gefunden.")
+        if device.mode == "normal":
+            if self.serial and self.serial != device.serial:
+                raise tk.ToolkitError("Ein anderer X6 ist angeschlossen. Bitte erneut verbinden.")
+            self.serial = device.serial
+            tk.enter_adfu(self.profile)
+        message = x6_reset.leave_adfu(self.profile, (self.runtime / "adfus.bin").read_bytes())
+        # leave_adfu reports success only after normal enumeration; check retained identity.
+        if self.serial:
+            tk.wait_for_mode(self.profile, "normal", serial=self.serial)
+        self.log.event("normal_mode_restored")
+        return {"message": message, "normal_mode": True}
 
     def mode(self, action: str) -> dict:
         self.begin(action)

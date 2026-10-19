@@ -1,7 +1,7 @@
 import { ActionsUSB, usbId, delay } from './lib/transport.js';
 import { X6Driver } from './lib/driver.js';
 import { X6Operations, incompleteDumpMessage } from './lib/workflows.js';
-import { normalizeBundle, sha256, assertSame } from './lib/formats.js';
+import { normalizeBundle, sha256, assertSame, BUNDLE_FILES, COMPONENT_LABELS } from './lib/formats.js';
 import { selectImages, selectionLabel, hasBoot } from './lib/images.js';
 import { packBackup, unpackBackup, importFolder } from './lib/archive.js';
 import { sessionFromLocation, bridgeRequest, pairHelper, saveSession } from './lib/bridge.js';
@@ -68,6 +68,7 @@ function updateControls() {
   for (const control of document.querySelectorAll('[data-control]')) control.disabled = state.busy || !state.profile;
   const connected = Boolean(state.driver && state.usb?.alive);
   $('dump').disabled ||= !connected;
+  $('dump-regions').disabled ||= !connected;
   $('restore').disabled ||= !connected || !state.backup;
   $('flash').disabled ||= !connected || !state.firmware;
   $('verify').disabled ||= !connected || !state.firmware;
@@ -204,7 +205,7 @@ function operations() {
   return new X6Operations(state.driver, state.profile, {serial: state.serial, progress, log, restart});
 }
 
-$('restart').addEventListener('click', () => void run('Player starten', async () => {
+$('restart').addEventListener('click', () => void run('Player neustarten', async () => {
   progress('Neustarten', 0, 0);
   const normal = await restart(state.driver);
   result(normal ? 'Player neu gestartet.' : 'Neustart noch nicht bestätigt.',
@@ -283,8 +284,8 @@ $('verify').addEventListener('click', () => void run('Mit Gerät vergleichen', a
 }));
 
 $('flash').addEventListener('click', () => void run('Firmware flashen', () => flashSelected(state.firmware)));
-for (const id of ['flash-backup', 'artwork-backup']) $(id).addEventListener('change', event => {
-  for (const target of ['flash-backup', 'artwork-backup']) $(target).checked = event.target.checked;
+for (const id of ['flash-backup', 'artwork-backup', 'restore-backup']) $(id).addEventListener('change', event => {
+  for (const target of ['flash-backup', 'artwork-backup', 'restore-backup']) $(target).checked = event.target.checked;
 });
 
 async function flashSelected(selected, changedLabels = []) {
@@ -331,12 +332,64 @@ async function dumpAndSave(forEditor = false) {
   return null;
 }
 
+const regionChoices = BUNDLE_FILES.map(name => {
+  const label = document.createElement('label'), input = document.createElement('input');
+  input.type = 'checkbox'; input.value = name; input.checked = true;
+  label.className = 'coupling'; label.append(input, document.createTextNode(COMPONENT_LABELS[name]));
+  $('region-options').append(label);
+  input.addEventListener('change', () => { $('regions-save').disabled = !regionChoices.some(item => item.checked); });
+  return input;
+});
+$('regions-all').addEventListener('click', () => {
+  for (const input of regionChoices) input.checked = true;
+  $('regions-save').disabled = false;
+});
+$('dump-regions').addEventListener('click', () => {
+  $('regions-dialog').returnValue = '';
+  $('regions-dialog').showModal();
+});
+$('regions-dialog').addEventListener('close', () => {
+  if ($('regions-dialog').returnValue !== 'save') return;
+  void run('Bereiche sichern', async () => {
+    const names = regionChoices.filter(input => input.checked).map(input => input.value);
+    const single = names.length === 1, extension = single ? '.bin' : '.zip';
+    const name = single ? names[0] : `x6-bereiche-${stamp()}.x6backup.zip`;
+    const handle = await savePicker(name, extension);
+    const operation = operations(), backup = await operation.dump(names);
+    if (single && backup.manifest.status === 'incomplete') {
+      state.pendingBackup = {data: packBackup(backup.files, backup.manifest), extension: '.zip',
+        name: `x6-unvollstaendig-${stamp()}.x6backup.zip`};
+      result('Sicherung unvollständig.', 'Die verfügbaren Daten können als gekennzeichnetes ZIP über „Gelesene Sicherung speichern“ gesichert werden.', 'warning');
+      return;
+    }
+    const data = single ? backup.files[names[0]] : packBackup(backup.files, backup.manifest);
+    state.pendingBackup = {data, name, extension};
+    await saveToHandle(handle, data);
+    state.pendingBackup = null;
+    if (backup.manifest.status === 'incomplete') {
+      result('Unvollständige Sicherung gespeichert.', incompleteDumpMessage(backup.manifest), 'warning');
+      return;
+    }
+    const boot = await operation.reboot();
+    result('Gewählte Bereiche gespeichert.', `${names.join(', ')}.${boot.normalMode ? ' Player normal gestartet.' : ' Neustart noch nicht bestätigt.'}`, boot.normalMode ? 'success' : 'warning');
+  });
+});
+
 $('restore').addEventListener('click', () => void run('Sicherung wiederherstellen', async () => {
   const emergency = !state.profile.boot_write_mapping_verified;
   const description = 'Bootdatensätze und Firmware werden durch die ausgewählte Sicherung ersetzt. ' +
     (emergency ? 'Die Wirkung des Boot-Schreibbefehls auf beide Kopien ist am X6 noch nicht vollständig belegt. Ohne erfolgreiche Boot-Rücklesung bleibt das Ergebnis teilweise unverifiziert.' : 'Anschließend werden alle Bereiche vollständig zurückgelesen.');
   if (!await confirmAction('Full Restore starten?', description, emergency)) { result('Abgebrochen', 'Es wurde nichts geschrieben.'); return; }
-  const outcome = await operations().restore(state.backup.files, emergency);
+  const backup = $('restore-backup').checked;
+  const name = `x6-vor-restore-${stamp()}.x6backup.zip`;
+  const handle = backup ? await savePicker(name, '.zip') : null;
+  const outcome = await operations().restore(state.backup.files, emergency, {backup, saveBefore: async before => {
+    const data = packBackup(before.files, before.manifest);
+    state.pendingBackup = {data, name, extension: '.zip'};
+    await saveToHandle(handle, data);
+    state.pendingBackup = null;
+    return true;
+  }});
   result(outcome.bootVerified ? 'Vollständig zurückgeschrieben und verifiziert.' : 'Firmware verifiziert, Boot-Rücklesung offen.',
     outcome.bootVerified ? (outcome.normalMode ? 'Der Player ist wieder normal gestartet.' : 'Die Rücksicherung ist geprüft. Der Neustart ist noch nicht bestätigt.') :
       'Die Schreibbefehle wurden bestätigt und das LFI vollständig geprüft. Die Bootdatensätze konnten nicht vollständig zurückgelesen werden. Der Player wurde nicht automatisch neu gestartet.',

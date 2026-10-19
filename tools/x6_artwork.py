@@ -12,7 +12,7 @@ import x6_archive as archive
 import x6_images as images
 import x6_lfi as lfi
 import x6_screensaver as screensaver
-import x6_screensaver_patch as screen_patch
+import x6_storage as storage
 import x6_toolkit as tk
 from x6_brec_transfer import validate_brec
 
@@ -96,11 +96,18 @@ def locate(components: dict[str, bytes], profile: tk.Profile, config: dict) -> d
             if any(index != slot["index"] and start < offset + size and end > offset for index, (start, end) in enumerate(ranges)):
                 raise ValueError("Der Bildplatz überlappt eine andere Ressource.")
             start = entry.data_offset + offset
-            if (slot["file"] == "COMMON.STY" and slot["index"] == config["screensaver"]["background_base"]
-                    and raw[screensaver.CATALOG_OFFSET:screensaver.CATALOG_OFFSET + 4] == b"X6SC"):
-                screensaver.catalog_offsets(raw)
+            if slot["file"] == "COMMON.STY" and slot["index"] == config["screensaver"]["background_base"]:
                 slot = {**slot, "fixed_black": True}
             result[slot["id"]] = PixelRange(start, start + size, slot)
+        managed = storage.inspect_storage(data, profile)
+        if managed["supported"]:
+            for background in managed["backgrounds"][managed["standard_count"]:]:
+                key = background["id"]
+                slot = {"id": key, "label": f"Zusatzbild {background['index'] - managed['standard_count'] + 1}",
+                        "area": "lfi", "file": "COMMON.STY", "endian": "little",
+                        "background_index": background["index"], "custom": True}
+                start = background["absolute_offset"]
+                result[key] = PixelRange(start, start + background["size"], slot)
     if "brec" in components:
         data = components["brec"]
         validate_brec(data, profile)
@@ -132,33 +139,20 @@ class Artwork:
         self.edits: dict[str, bytes] = {}
         self.coupled = all(key in self.ranges for key in self.config["startup_ids"])
         data = self.originals.get("lfi")
-        self.contour = bool(data and screensaver.supported(data, lfi.lfi_entries(data), self.config.get("screensaver")))
-        self.patch_state = screen_patch.inspect(data, self.config)
+        self.storage = storage.inspect_storage(data, profile) if data else {"supported": False, "capacity": 0, "free_bytes": 0}
+        self.contour = self.storage["supported"]
+        self.patch_state = "disabled"
         self.patched_lfi: bytes | None = None
+        self.working_lfi: bytes | None = None
+        self.original_pixels = {key: self.pixels(key) for key in self.ranges}
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.edits) or self.patched_lfi is not None or bool(self.normalization)
+        return bool(self.edits) or self.working_lfi is not None or bool(self.normalization)
 
     def apply_screensaver(self) -> None:
-        """Opt in explicitly; preserve source images and all pending image edits."""
-        if self.patch_state == "current":
-            return
-        data = screen_patch.apply(self.originals.get("lfi"), self.config)
-        # Validate and prepare all work before changing the editor state.
-        ranges = locate({**self.originals, "lfi": data}, self.profile, self.config)
-        edits = dict(self.edits)
-        profile = self.config["screensaver"]
-        for key, raw in edits.items():
-            if ranges[key].slot.get("fixed_black") and any(raw):
-                raise ValueError("Vor dem Patch die Änderung am festen schwarzen Platz zurücksetzen.")
-            slot = self.ranges[key].slot
-            index = slot.get("index", -1) - profile["background_base"] + 1
-            if slot.get("file") == "COMMON.STY" and 1 <= index <= profile["background_count"]:
-                edits[key] = screensaver.process(raw, profile, index)
-        self.patched_lfi, self.edits = data, edits
-        self.ranges = ranges
-        self.contour, self.patch_state = True, "current"
+        """Code upgrades are deliberately unavailable while the device bug is open."""
+        raise ValueError("Screensaver-Nachrüstung ist in dieser Version deaktiviert.")
 
     def targets(self, key: str) -> list[str]:
         if key not in self.ranges:
@@ -169,11 +163,13 @@ class Artwork:
 
     def pixels(self, key: str, original: bool = False) -> bytes:
         item = self.ranges[key]
+        if original:
+            return self.original_pixels[key]
         if not original and key in self.edits:
             return self.edits[key]
         source = self.originals[item.slot["area"]]
-        if not original and item.slot["area"] == "lfi" and self.patched_lfi is not None:
-            source = self.patched_lfi
+        if item.slot["area"] == "lfi" and self.working_lfi is not None:
+            source = self.working_lfi
         return source[item.start:item.end]
 
     def rgb(self, key: str, original: bool = False) -> bytes:
@@ -184,9 +180,52 @@ class Artwork:
         slot = self.ranges[key].slot
         profile = self.config.get("screensaver")
         index = slot.get("index", -1) - (profile or {}).get("background_base", 0) + 1
-        if self.contour and slot.get("file") == "COMMON.STY" and 1 <= index <= profile["background_count"]:
-            return screensaver.process(raw, profile, index)
+        if self.contour and slot.get("file") == "COMMON.STY":
+            if slot.get("custom"):
+                index = slot["background_index"] + 1
+            if index >= 1:
+                return screensaver.process(raw, profile, index)
         return raw
+
+    def prepare_new(self, rgb: bytes) -> bytes:
+        """New motifs use the same unshifted, idempotent import treatment."""
+        if len(rgb) != self.config["width"] * self.config["height"] * 3:
+            raise ValueError("Das Bild muss genau 240 × 320 RGB-Pixel enthalten.")
+        return screensaver.process(encode_rgb565(rgb, "little"), self.config["screensaver"], 2)
+
+    def add_background(self, rgb: bytes) -> str:
+        """Commit one validated structural edit only after the repack succeeds."""
+        raw = self.prepare_new(rgb)
+        data = storage.add_background(self.working_lfi or self.originals.get("lfi"), raw, self.profile)
+        ranges = locate({**self.originals, "lfi": data}, self.profile, self.config)
+        report = storage.inspect_storage(data, self.profile)
+        key = report["backgrounds"][-1]["id"]
+        self.working_lfi, self.ranges, self.storage = data, ranges, report
+        self.original_pixels[key] = raw
+        return key
+
+    def delete_background(self, key: str) -> dict[str, str]:
+        """Return ID remapping so upload sources stay with their image after compaction."""
+        slot = self.ranges[key].slot
+        if not slot.get("custom"):
+            raise ValueError("Standardbilder und Schwarz können nicht gelöscht werden.")
+        index = slot["background_index"]
+        data = storage.delete_background(self.working_lfi or self.originals["lfi"], index, self.profile)
+        ranges = locate({**self.originals, "lfi": data}, self.profile, self.config)
+        report = storage.inspect_storage(data, self.profile)
+        remap = {}
+        for old, item in self.ranges.items():
+            if old == key:
+                continue
+            position = item.slot.get("background_index", -1)
+            remap[old] = f"background-{position:02d}" if item.slot.get("custom") and position > index else old
+        originals = {remap[old]: raw for old, raw in self.original_pixels.items() if old in remap}
+        edits = {remap[old]: raw for old, raw in self.edits.items() if old in remap}
+        self.working_lfi, self.ranges, self.storage = data, ranges, report
+        self.original_pixels, self.edits = originals, edits
+        if data == self.originals["lfi"]:
+            self.working_lfi = None
+        return remap
 
     def prepare(self, key: str, rgb: bytes) -> bytes:
         """One crop -> native pixels pipeline for both preview and Apply."""
@@ -216,14 +255,14 @@ class Artwork:
 
     @property
     def changed_areas(self) -> tuple[str, ...]:
-        return tuple(area for area in ("brec", "lfi") if (area == "lfi" and (self.patched_lfi is not None or self.normalization))
+        return tuple(area for area in ("brec", "lfi") if (area == "lfi" and (self.working_lfi is not None or self.normalization))
                      or any(self.ranges[key].slot["area"] == area for key in self.edits))
 
     def build(self) -> dict[str, bytes]:
         """Patch pixels and affected checksums only, then independently validate."""
         output = dict(self.originals)
-        if self.patched_lfi is not None:
-            output["lfi"] = self.patched_lfi
+        if self.working_lfi is not None:
+            output["lfi"] = self.working_lfi
         for area in self.changed_areas:
             data = bytearray(output[area])
             changed_files = set()
@@ -297,8 +336,8 @@ class Artwork:
         manifest = {"schema": 1, "model": self.profile.model, "nand_id": self.profile.nand_id.hex(),
                     "status": "complete", "kind": "edited-firmware", "files": records,
                     "edited_images": list(self.edits), "steps": {"artwork": {"status": "ok"}}}
-        if self.patched_lfi is not None:
-            manifest.update(screensaver_patch=self.config["screensaver"]["revision"], hardware_verified=False)
+        if self.working_lfi is not None:
+            manifest.update(artwork_storage_changed=True, hardware_verified=False)
         if self.normalization:
             manifest["lfi_normalization"] = {"changes": list(self.normalization)}
         if self.selection.serial:

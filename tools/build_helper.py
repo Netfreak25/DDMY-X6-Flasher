@@ -27,7 +27,8 @@ def build() -> None:
                "--specpath", str(work), "--icon", str(ROOT / "assets/x6-icon.ico"),
                "--version-file", str(ROOT / "tools/version_info.txt")]
     resources = ["site.json", "assets/x6-icon.ico", "assets/x6-icon.png",
-                 "assets/x6-icon.svg", "tools/x6_profile.json", "tools/x6_artwork.json", "tools/x6_device_probe.ps1"]
+                 "assets/x6-icon.svg", "tools/x6_profile.json", "tools/x6_artwork.json", "tools/x6_device_probe.ps1",
+                 "tools/x6_storage.json", "docs/recovery.md"]
     for name in resources:
         path = ROOT / name
         command.extend(["--add-data", f"{path}:{path.parent.relative_to(ROOT)}"])
@@ -50,13 +51,17 @@ def build() -> None:
     result = json.loads(report.read_text(encoding="utf-8"))
     required = {"Verbinden", "Sicherung erstellen", "Sicherung wiederherstellen", "Auswahl flashen",
                 "Mit Gerät vergleichen", "ADFU betreten", "ADFU verlassen", "Player ausschalten", "Bilder bearbeiten",
-                "Vor dem Flashen sichern"}
+                "Vor dem Flashen sichern", "Player neustarten", "Recovery-Hilfe"}
+    expected_slots = len(json.loads((ROOT / "tools/x6_artwork.json").read_text(encoding="utf-8"))["slots"])
     if (result.get("ok") is not True or not required <= set(result.get("controls", []))
             or result.get("backend_hashes_checked") is not True or result.get("workspace_outside_resources") is not True
             or result.get("device_access") is not False or result.get("browser_started") is not False
-            or result.get("artwork_slots") != 14 or result.get("artwork_formats") != ["PNG", "JPEG", "WEBP"]
+            or result.get("artwork_slots") != expected_slots or result.get("artwork_formats") != ["PNG", "JPEG", "WEBP"]
             or result.get("screensaver_revision") != screensaver.REVISION
             or result.get("backup_default") is not True
+            or result.get("full_restore_backup_default") is not True
+            or result.get("storage_schema") != 1 or result.get("recovery_available") is not True
+            or result.get("screensaver_patch_enabled") is not False
             or result.get("wait_progress_style") != "X6.Horizontal.TProgressbar"
             or result.get("poweroff_payload_size") != profile.protocol["poweroff"]["size"]
             or result.get("http_pairing") != {"preflight_status": 204, "pair_status": 200}):

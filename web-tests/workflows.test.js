@@ -160,3 +160,45 @@ test('complete archives and legacy folder imports validate with the unchanged ma
     ({name, size: data.length, arrayBuffer: async () => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)})), profile);
   assert.equal((await validateBundle(folder, profile)).status, 'complete');
 });
+
+test('intentional partial backups read each selected boot pair once and export only requested components', async () => {
+  const names = ['mbrec.bin', 'mbrec_copy.bin', 'brec0.bin', 'brec1.bin', 'lfi.bin'];
+  for (const selected of [['mbrec.bin'], ['brec1.bin'], ['lfi.bin'], ['mbrec.bin', 'brec0.bin'], ['mbrec_copy.bin', 'brec1.bin'], ['mbrec.bin', 'brec1.bin', 'lfi.bin']]) {
+    const f = fixture(), result = await f.operations.dump(selected);
+    assert.equal(result.manifest.status, 'partial');
+    assert.deepEqual(Object.keys(result.files).sort(), [...selected].sort());
+    assert.equal(f.calls.filter(value => value === 'read').length, Number(selected.includes('lfi.bin')));
+    assert.equal(f.calls.filter(value => value === 'boot0').length, Number(selected.some(name => ['mbrec.bin', 'brec0.bin'].includes(name))));
+    assert.equal(f.calls.filter(value => value === 'boot1').length, Number(selected.some(name => ['mbrec_copy.bin', 'brec1.bin'].includes(name))));
+    const packaged = unpackBackup(packBackup(result.files, result.manifest), profile);
+    await validateBundle(packaged, profile, {allowPartial: true});
+    await assert.rejects(validateBundle(packaged, profile), /unvollständig/);
+    assert.deepEqual(result.manifest.requested_components, names.filter(name => selected.includes(name)));
+  }
+});
+
+test('full restore backup is optional; cancelled save or failed reads stop before every write', async () => {
+  const f = fixture();
+  await f.operations.restore(files, false, {backup: true, saveBefore: async before => {
+    await validateBundle({...before.files, 'manifest.json': encodeManifest(before.manifest)}, profile);
+    f.calls.push('saved'); return true;
+  }});
+  assert.deepEqual(f.calls, ['read', 'boot0', 'boot1', 'saved', 'driver', 'mbrec', 'brec', 'lfi', 'final', 'read', 'boot0', 'boot1', 'reset']);
+  for (const failed of ['save', 'read']) {
+    const attempt = fixture();
+    if (failed === 'read') attempt.driver.readLfi = async () => {throw Error('read failed');};
+    await assert.rejects(attempt.operations.restore(files, false, {backup: true, saveBefore: async () => false}), /gespeichert|read failed/);
+    assert.ok(!attempt.calls.some(value => ['driver', 'mbrec', 'brec', 'lfi', 'final', 'reset'].includes(value)));
+  }
+});
+
+test('partial archive imports by content while incomplete archives remain rejected', async () => {
+  const {selectImages} = await import('../lib/images.js');
+  const f = fixture(), backup = await f.operations.dump(['mbrec_copy.bin', 'brec1.bin']);
+  const packed = packBackup(backup.files, backup.manifest);
+  const source = {name: 'parts.zip', size: packed.length, arrayBuffer: async () => packed.buffer};
+  const selected = await selectImages([source], profile);
+  assert.deepEqual(Object.keys(selected.components), ['mbrec', 'brec']);
+  const damaged = packBackup(backup.files, {...backup.manifest, status: 'incomplete'});
+  await assert.rejects(selectImages([{...source, size: damaged.length, arrayBuffer: async () => damaged.buffer}], profile), /unvollständig/);
+});

@@ -1,17 +1,21 @@
 /** Synthetic blank image tables, not firmware extracted from a device. */
 import { readFile } from 'node:fs/promises';
 import { view, wordSum, sha256 } from '../lib/formats.js';
+import { STORAGE } from '../lib/storage.js';
 
 export const config = JSON.parse(await readFile(new URL('../tools/x6_artwork.json', import.meta.url)));
 export const baseProfile = JSON.parse(await readFile(new URL('../tools/x6_profile.json', import.meta.url)));
 
-export async function artworkFixture(size = 3 * 1024 * 1024) {
+export async function artworkFixture(size = 3 * 1024 * 1024, managed = false) {
+  if (managed) size = Math.max(size, 8 * 1024 * 1024);
   const profile = {...baseProfile, lfi_size: size};
   const lfi = new Uint8Array(size), input = view(lfi);
   input.setUint32(0, 0x0ff0aa55, true);
   let offset = 8192;
   for (let index = 0; index < 148; index++) {
-    const name = index < 3 ? ['COMMON.STY', 'LOGO.STY', 'END.STY'][index] : `T${String(index).padStart(7, '0')}.BIN`;
+    let name = index < 3 ? ['COMMON.STY', 'LOGO.STY', 'END.STY'][index] : `T${String(index).padStart(7, '0')}.BIN`;
+    if (managed && index === 3) name = 'CONFIG.BIN';
+    if (managed && index === 147) name = 'X6FREE.BIN';
     const slots = config.slots.filter(slot => slot.file === name);
     let content = new Uint8Array(4);
     if (slots.length) {
@@ -24,6 +28,17 @@ export async function artworkFixture(size = 3 * 1024 * 1024) {
         table.setUint32(pos, tableEnd + nth * config.pixel_bytes, true); table.setUint32(pos + 4, config.pixel_bytes, true);
         table.setUint16(pos + 8, 2, true); table.setUint16(pos + 10, 240, true); table.setUint16(pos + 12, 320, true);
       });
+      if (managed && name === 'COMMON.STY') {
+        const expanded = new Uint8Array(STORAGE.common_base_size); expanded.set(content); content = expanded;
+        const catalog = view(content);
+        catalog.setUint32(64, 0x43533658, true); catalog.setUint16(68, 1, true); catalog.setUint16(70, 11, true);
+        catalog.setUint32(72, content.length, true);
+        for (let nth = 1; nth < 11; nth++) catalog.setUint32(80 + nth * 4, tableEnd + nth * config.pixel_bytes, true);
+      }
+    }
+    if (name === 'CONFIG.BIN') {
+      content = new Uint8Array(512); const settings = view(content);
+      settings.setUint32(0, 0x676663, true); settings.setUint32(72, 128, true); settings.setUint32(76, 8, true); settings.setUint16(128, 11, true);
     }
     const pos = 512 + index * 32, [base, ext] = name.split('.');
     lfi.set(new TextEncoder().encode(base.padEnd(8) + ext), pos);

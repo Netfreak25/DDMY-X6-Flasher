@@ -20,14 +20,18 @@ import x6_toolkit as tk
 from test_x6_brec_transfer import synthetic_inputs
 
 
-def fixture():
+def fixture(managed=False):
     """Generate valid blank resources, boot records and 148 files without ROM data."""
     config = art.catalog()
-    raw = bytearray(3 * 1024 * 1024)
+    raw = bytearray((8 if managed else 3) * 1024 * 1024)
     struct.pack_into("<I", raw, 0, lfi.LFI_MAGIC)
     offset = lfi.LFI_DIRECTORY_END
     for index in range(lfi.X6_FILE_COUNT):
         name = ["COMMON.STY", "LOGO.STY", "END.STY"][index] if index < 3 else f"T{index:07d}.BIN"
+        if managed and index == 3:
+            name = "CONFIG.BIN"
+        if managed and index == lfi.X6_FILE_COUNT - 1:
+            name = "X6FREE.BIN"
         slots = [slot for slot in config["slots"] if slot.get("file") == name]
         content = bytearray(4)
         if slots:
@@ -39,6 +43,15 @@ def fixture():
             for nth, slot in enumerate(slots):
                 struct.pack_into("<IIHHH", content, 1024 + slot["index"] * 16,
                                  table_end + nth * config["pixel_bytes"], config["pixel_bytes"], 2, 240, 320)
+            if managed and name == "COMMON.STY":
+                content.extend(bytes(art.storage.LAYOUT["common_base_size"] - len(content)))
+                struct.pack_into("<4sHHII", content, 64, b"X6SC", 1, 11, len(content), 0)
+                struct.pack_into("<11I", content, 80, 0, *[table_end + nth * config["pixel_bytes"] for nth in range(1, 11)])
+        if name == "CONFIG.BIN":
+            content = bytearray(512)
+            content[:4] = b"cfg\0"
+            struct.pack_into("<II", content, 72, 128, 8)
+            struct.pack_into("<H", content, 128, 11)
         pos = 512 + index * 32
         base, ext = name.split(".")
         raw[pos:pos + 11] = (base.ljust(8) + ext).encode("ascii")
@@ -87,6 +100,12 @@ class ArtworkTests(unittest.TestCase):
         self.assertEqual(len(self.editor.ranges), 14)
         self.assertEqual(self.editor.build(), self.components)
         for key in self.editor.ranges:
+            if self.editor.ranges[key].slot.get("fixed_black"):
+                with self.assertRaisesRegex(ValueError, "Schwarz"):
+                    self.editor.replace(key, self.red)
+                with self.assertRaisesRegex(ValueError, "Schwarz"):
+                    self.editor.reset(key)
+                continue
             self.editor.replace(key, self.red)
             self.assertEqual(self.editor.rgb(key), self.red)
             self.editor.reset(key)
@@ -149,6 +168,69 @@ class ArtworkTests(unittest.TestCase):
         self.editor.coupled = False
         self.editor.replace("boot-startup", self.red)
         self.assertEqual(self.editor.stage(self.base / "only-brec").areas, ("brec",))
+
+    def managed_editor(self):
+        """Use public allocation metadata with synthetic image pixels and no device data."""
+        components, profile = fixture(managed=True)
+        for area, data in components.items():
+            self.selection.files[area].write_bytes(data)
+            self.selection.hashes[area] = tk.sha256_file(self.selection.files[area])
+        return art.Artwork(self.selection, profile)
+
+    def test_dynamic_images_preserve_pending_edits_originals_and_identity(self):
+        model = self.managed_editor()
+        initial = model.build()
+        capacity = model.storage["capacity"]
+        self.assertTrue(model.contour)
+        self.assertFalse(model.has_changes)
+        model.replace("startup", self.red)
+        blue = bytes((0, 0, 255)) * 240 * 320
+        first = model.add_background(self.red)
+        second = model.add_background(blue)
+        self.assertEqual((first, second), ("background-12", "background-13"))
+        self.assertEqual(model.storage["capacity"], capacity - 2)
+        second_original = model.pixels(second, original=True)
+        model.replace(second, self.red)
+        remap = model.delete_background(first)
+        self.assertEqual(remap[second], first)
+        self.assertEqual(model.pixels(first, original=True), second_original)
+        model.reset(first)
+        self.assertEqual(model.pixels(first), second_original)
+        model.reset("startup")
+        self.assertEqual(model.pixels("startup"), model.original_pixels["startup"])
+        selected = model.stage(self.base / "managed")
+        reopened = art.Artwork(selected, model.profile)
+        self.assertEqual(reopened.pixels(first), second_original)
+        self.assertEqual(reopened.storage["capacity"], capacity - 1)
+        model.delete_background(first)
+        self.assertEqual(model.build(), initial)
+        self.assertFalse(model.has_changes)
+
+    def test_dynamic_preview_gradient_and_failed_operations_are_atomic(self):
+        model = self.managed_editor()
+        white = bytes((255, 255, 255)) * 240 * 320
+        key = model.add_background(white)
+        expected = model.prepare_new(white)
+        self.assertEqual(model.pixels(key), expected)
+        model.replace(key, model.rgb(key))
+        self.assertEqual(model.pixels(key), expected)
+        before = model.build()
+        for protected in ("background-01", "background-02"):
+            with self.assertRaisesRegex(ValueError, "Standardbilder"):
+                model.delete_background(protected)
+        with self.assertRaisesRegex(ValueError, "240"):
+            model.add_background(b"invalid")
+        self.assertEqual(model.build(), before)
+        self.assertEqual(model.originals["lfi"], self.selection.files["lfi"].read_bytes())
+
+    def test_legacy_add_and_screensaver_upgrade_are_unavailable(self):
+        before = self.editor.build()
+        with self.assertRaisesRegex(ValueError, "Bilderkatalog"):
+            self.editor.add_background(self.red)
+        with self.assertRaisesRegex(ValueError, "deaktiviert"):
+            self.editor.apply_screensaver()
+        self.assertFalse(self.editor.has_changes)
+        self.assertEqual(self.editor.build(), before)
 
 
 class PictureTests(unittest.TestCase):

@@ -9,7 +9,6 @@ from tkinter import filedialog, messagebox, ttk
 import x6_artwork as art
 import x6_images as images
 import x6_picture as picture
-import x6_screensaver_patch as screen_patch
 import x6_toolkit as toolkit
 from PIL import Image, ImageTk
 
@@ -118,7 +117,7 @@ class CropDialog:
 
 
 class ArtworkWindow:
-    """A fixed gallery backed by an immutable local snapshot, never a live device."""
+    """A catalogue gallery backed by an immutable local snapshot, never a live device."""
 
     def __init__(self, host):
         self.host, self.model = host, None
@@ -147,10 +146,12 @@ class ArtworkWindow:
         self.coupling.pack(anchor="w")
         screen_row = ttk.Frame(panel)
         screen_row.pack(fill="x", pady=(8, 0))
-        self.patch_button = self.button(screen_row, "Screensaver nachrüsten", self.patch_screensaver)
-        self.patch_button.pack(side="right", padx=(12, 0))
         self.patch_info = tk.StringVar()
         ttk.Label(screen_row, textvariable=self.patch_info, wraplength=650).pack(side="left", fill="x", expand=True)
+        self.add_button = self.button(screen_row, "Bild hinzufügen", self.add)
+        self.add_button.pack(side="right", padx=(12, 0))
+        self.capacity_info = tk.StringVar()
+        ttk.Label(panel, textvariable=self.capacity_info, wraplength=960).pack(anchor="w")
         body = ttk.Frame(panel)
         body.pack(fill="both", expand=True, pady=12)
         gallery_frame = ttk.Frame(body)
@@ -191,7 +192,9 @@ class ArtworkWindow:
         self.reset_button = self.button(actions, "Änderung zurücksetzen", self.reset)
         for button in (self.replace_button, self.edit_button, self.reset_button):
             button.pack(side="left", padx=3)
-        ttk.Label(detail, text="240 × 320 · RGB565\nPNG, JPEG, WebP · bis 25 MiB / 40 MP\n14 feste Plätze · keine zusätzlichen Bilder", wraplength=480).pack(anchor="w")
+        self.delete_button = self.button(detail, "Zusatzbild löschen", self.delete)
+        self.delete_button.pack(anchor="w", pady=(0, 8))
+        ttk.Label(detail, text="240 × 320 · RGB565\nPNG, JPEG, WebP · bis 25 MiB / 40 MP\nSchwarz geschützt · zehn Standardmotive ersetzbar\nZusatzbilder nach freiem Speicher", wraplength=480).pack(anchor="w")
         self.backup_checkbox = ttk.Checkbutton(panel, text="Vor dem Flashen sichern",
                                               variable=host.backup_before_flash)
         self.backup_checkbox.pack(anchor="w", pady=(0, 6))
@@ -240,17 +243,15 @@ class ArtworkWindow:
             button.configure(state="disabled" if self.host.busy else "normal")
         ready = self.model is not None and not self.host.busy
         changed = ready and self.model.has_changes
-        state = self.model.patch_state if self.model else "missing"
-        can_patch = state in ("install", "update")
-        self.patch_button.configure(state="normal" if ready and can_patch else "disabled",
-                                    text=screen_patch.LABELS[state] if state in ("install", "update", "current") else "Screensaver nachrüsten")
-        notice = screen_patch.LABELS[state]
-        if self.model and self.model.patched_lfi is not None:
-            notice = "Screensaver-Patch für den Export vorbereitet. Auf Hardware unverifizierter Stand."
-        elif self.active and self.active.startswith("background-") and not self.model.contour:
-            notice += " Für gut lesbare Schrift auf eigenen Bildern empfehlen wir den passenden Patch. Die Bearbeitung ist auch ohne Patch möglich."
-        self.patch_info.set(notice)
+        self.patch_info.set("Der seitliche Bildwechsel auf dem Player ist weiterhin ungeklärt. Hier wird nur die Bildverwaltung bearbeitet.")
+        report = self.model.storage if self.model else {}
+        self.add_button.configure(state="normal" if ready and report.get("supported") and report.get("capacity", 0) else "disabled")
+        capacity = (f"{report['free_bytes']:,} Bytes frei · Platz für {report['capacity']} weitere Bilder"
+                    if report.get("supported") else "Zusatzbilder benötigen einen vorhandenen unterstützten Bilderkatalog.")
+        self.capacity_info.set(capacity)
         fixed = ready and self.active and self.model.ranges[self.active].slot.get("fixed_black")
+        custom = ready and self.active and self.model.ranges[self.active].slot.get("custom")
+        self.delete_button.configure(state="normal" if custom else "disabled")
         for button in (self.replace_button, self.edit_button):
             button.configure(state="normal" if ready and self.active and not fixed else "disabled")
         can_reset = ready and not fixed and (self.active in self.model.edits or self.model.contour)
@@ -330,6 +331,17 @@ class ArtworkWindow:
     def refresh(self):
         if not self.model:
             return
+        slots = {slot["id"]: slot for slot in self.config["slots"]}
+        slots.update({key: item.slot for key, item in self.model.ranges.items()})
+        for key in set(self.tiles) - set(slots):
+            self.tiles.pop(key).destroy()
+            self.photos.pop(key, None)
+        for key, slot in slots.items():
+            if key not in self.tiles:
+                self.tiles[key] = ttk.Button(self.gallery, text=self.slot_label(slot), width=23,
+                                             command=lambda selected=key: self.select(selected), compound="top")
+        self.gallery_columns = 0
+        self.resize_gallery(type("Size", (), {"width": self.gallery_canvas.winfo_width()})())
         areas = " + ".join(area.upper() for area in self.model.originals)
         message = f"{areas} geladen · {len(self.model.edits)} Bildplätze geändert"
         if self.model.normalization:
@@ -337,7 +349,7 @@ class ArtworkWindow:
         if not all(key in self.model.ranges for key in self.config["startup_ids"]):
             message += " · Nur frühes Startbild verfügbar" if "brec" in self.model.originals else " · Frühes Startbild fehlt (BREC nicht geladen)"
         self.info.set(message)
-        for slot in self.config["slots"]:
+        for slot in slots.values():
             key = slot["id"]
             if key in self.model.ranges:
                 image = Image.frombytes("RGB", (self.config["width"], self.config["height"]), self.model.rgb(key))
@@ -364,31 +376,42 @@ class ArtworkWindow:
     def toggle_coupling(self):
         self.model.coupled = self.coupled.get()
 
-    def patch_screensaver(self):
-        """Only this explicit button opts into code and background changes."""
-        def done(_result):
-            self.dirty = self.model.has_changes
-            self.refresh()
-        self.offline("Screensaver vorbereiten", self.model.apply_screensaver, done)
+    def add(self):
+        path = filedialog.askopenfilename(parent=self.window, title="Zusatzbild wählen", filetypes=[("Bilder", "*.png *.jpg *.jpeg *.webp")])
+        if path:
+            self.offline("Bild einlesen", lambda: picture.import_picture(Path(path)), lambda source: self.crop(source, adding=True))
+
+    def delete(self):
+        if not messagebox.askokcancel("Zusatzbild löschen?", "Das ausgewählte Zusatzbild aus der Arbeitskopie entfernen?", parent=self.window):
+            return
+        remap = self.model.delete_background(self.active)
+        self.sources = {remap[key]: source for key, source in self.sources.items() if key in remap}
+        self.active = "background-01"
+        self.dirty = self.model.has_changes
+        self.refresh()
 
     def replace(self):
         path = filedialog.askopenfilename(parent=self.window, title="Ersatzbild wählen", filetypes=[("Bilder", "*.png *.jpg *.jpeg *.webp")])
         if path:
             self.offline("Bild einlesen", lambda: picture.import_picture(Path(path)), self.crop)
 
-    def crop(self, source, options=None):
+    def crop(self, source, options=None, adding=False):
         key = self.active
 
         def apply(rgb, original, settings):
-            targets = self.model.targets(key)
-            self.model.replace(key, rgb)
+            if adding:
+                self.active = self.model.add_background(rgb)
+                targets = [self.active]
+            else:
+                targets = self.model.targets(key)
+                self.model.replace(key, rgb)
             for target in targets:
                 self.sources[target] = (original, settings)
             self.dirty = self.model.has_changes
             self.refresh()
 
         self.crop_dialog = CropDialog(self.window, source, self.config, apply, options,
-                                      prepare=lambda rgb: self.model.preview_rgb(key, rgb))
+                                      prepare=lambda rgb: art.decode_rgb565(self.model.prepare_new(rgb), "little") if adding else self.model.preview_rgb(key, rgb))
 
     def edit(self):
         if self.active in self.sources:
@@ -427,9 +450,9 @@ class ArtworkWindow:
             self.offline("Firmwarepaket speichern", lambda: self.model.save_package(Path(name), toolkit.new_run("artwork-package").directory / "candidate"), self.saved)
 
     def flash(self):
-        labels = [slot["label"] for slot in self.config["slots"] if slot["id"] in self.model.edits]
-        if self.model.patched_lfi is not None:
-            labels.append("Screensaver-Patch")
+        labels = [item.slot["label"] for key, item in self.model.ranges.items() if key in self.model.edits]
+        if self.model.working_lfi is not None:
+            labels.append("Bilderkatalog / Zusatzbilder")
         self.offline("Geänderte Firmwarebereiche prüfen", lambda: self.model.stage(toolkit.new_run("artwork-flash").directory / "candidate"),
                      lambda selection: self.host.flash(selection, labels))
 

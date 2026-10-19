@@ -71,14 +71,14 @@ def select_images(sources: tuple[Path, ...], target: Path, profile: tk.Profile) 
     for index, source in enumerate(sources):
         if source.is_dir() or zipfile.is_zipfile(source):
             folder = target / f"package-{index}"
-            manifest = archive.import_backup(source, folder, profile)
+            manifest = archive.import_backup(source, folder, profile, allow_partial=True)
             if (folder / "original-lfi.bin").is_file():
                 normalization.extend(manifest["lfi_normalization"]["changes"])
             identity = manifest.get("device_serial")
             if serial and identity and serial.upper() != identity.upper():
                 raise tk.ToolkitError("Die Pakete gehören zu unterschiedlichen Geräten.")
             serial = serial or identity
-            inputs.extend(folder / name for name in tk.BUNDLE_FILES)
+            inputs.extend(folder / name for name in tk.BUNDLE_FILES if name in manifest["files"])
         else:
             if source.stat().st_size not in (profile.mbrec_size, profile.brec_size, profile.lfi_size):
                 raise tk.ToolkitError(f"{source.name}: unbekannte Firmwaregröße.")

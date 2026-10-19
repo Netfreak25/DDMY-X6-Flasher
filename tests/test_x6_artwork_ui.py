@@ -64,29 +64,50 @@ class EditorWindowTests(unittest.TestCase):
         self.assertTrue(self.editor.backup_checkbox.instate(["disabled"]))
         self.host.busy = False
 
-    def test_screensaver_upgrade_is_optional_preserves_edits_and_disables_second_patch(self):
-        """A UI action alone activates code changes; selecting wallpapers only explains it."""
-        _components, _device, config, versions = patch_fixtures.fixture()
-        path = self.data.selection.files["lfi"]
-        path.write_bytes(versions["install"])
-        self.data.selection.hashes["lfi"] = art.tk.sha256_file(path)
-        with mock.patch.object(art, "catalog", return_value=config):
-            model = art.Artwork(self.data.selection, self.data.profile)
+    def test_screensaver_upgrade_unavailable_and_black_protected(self):
+        """The editor does not expose an obsolete code patch or offer installation."""
+        self.editor.select("background-01")
+        for button in (self.editor.replace_button, self.editor.edit_button,
+                       self.editor.reset_button, self.editor.delete_button):
+            self.assertTrue(button.instate(["disabled"]))
+        self.assertFalse(hasattr(self.editor, "patch_button"))
+        self.assertNotIn("empfehlen", self.editor.patch_info.get())
+        self.assertIn("ungeklärt", self.editor.patch_info.get())
+        with self.assertRaisesRegex(ValueError, "deaktiviert"):
+            self.data.editor.apply_screensaver()
+        self.assertFalse(self.data.editor.has_changes)
+        self.assertTrue(self.editor.add_button.instate(["disabled"]))
+
+    def test_managed_gallery_add_cancel_delete_and_source_remapping(self):
+        model = self.data.managed_editor()
         self.editor.loaded(model)
-        self.editor.select("background-02")
-        self.assertIn("empfehlen", self.editor.patch_info.get())
+        self.assertTrue(self.editor.add_button.instate(["!disabled"]))
+        self.assertIn("Bytes frei", self.editor.capacity_info.get())
+        self.editor.crop(ui.Image.new("RGB", (400, 400), "blue"), adding=True)
+        self.editor.crop_dialog.close()
+        self.assertEqual(len(self.editor.tiles), 14)
         self.assertFalse(model.has_changes)
-        self.assertIsNone(model.patched_lfi)
-        self.assertEqual(str(self.editor.patch_button.cget("state")), "normal")
-        model.replace("shutdown", self.data.red)
-        pixels = model.pixels("shutdown")
-        self.editor.patch_button.invoke()
-        self.finish()
-        self.assertTrue(model.contour)
-        self.assertEqual(model.patch_state, "current")
-        self.assertEqual(model.pixels("shutdown"), pixels)
-        self.assertEqual(str(self.editor.patch_button.cget("state")), "disabled")
-        self.assertEqual(model.originals["lfi"], versions["install"])
+        self.editor.crop(ui.Image.new("RGB", (400, 400), "blue"), adding=True)
+        self.editor.crop_dialog.accept()
+        self.assertEqual(self.editor.active, "background-12")
+        self.assertEqual(len(self.editor.tiles), 15)
+        blue = model.pixels("background-12")
+        self.editor.crop(ui.Image.new("RGB", (400, 400), "red"), adding=True)
+        self.editor.crop_dialog.accept()
+        red_source = self.editor.sources["background-13"]
+        self.editor.select("background-12")
+        with mock.patch.object(ui.messagebox, "askokcancel", return_value=False):
+            self.editor.delete()
+        self.assertEqual(model.pixels("background-12"), blue)
+        with mock.patch.object(ui.messagebox, "askokcancel", return_value=True):
+            self.editor.delete()
+        self.assertNotIn("background-13", self.editor.tiles)
+        self.assertEqual(self.editor.sources["background-12"], red_source)
+        self.editor.select("background-12")
+        self.editor.edit()
+        self.editor.crop_dialog.accept()
+        self.editor.reset()
+        self.assertEqual(model.pixels("background-12"), model.original_pixels["background-12"])
 
     def test_repaired_import_can_be_saved_without_editing_any_picture(self):
         raw = bytearray(self.data.components["lfi"])
@@ -151,7 +172,7 @@ class EditorWindowTests(unittest.TestCase):
         """The visible crop is the exported pixel data, after every edit operation."""
         model = self.data.editor
         model.contour = True  # Recognition has separate byte-level tests.
-        self.editor.select("background-01")
+        self.editor.select("background-02")
         source = ui.Image.new("RGB", (480, 320), "white")
         source.paste("yellow", (0, 0, 240, 320))
         self.editor.crop(source)
@@ -160,7 +181,7 @@ class EditorWindowTests(unittest.TestCase):
         dialog.pan_x.set(0.5)
         dialog.window.after_cancel(dialog.preview_id)
         dialog.refresh()
-        expected = model.preview_rgb("background-01", dialog.rgb)
+        expected = model.preview_rgb("background-02", dialog.rgb)
         self.assertEqual(ui.ImageTk.getimage(dialog.photo).convert("RGB").tobytes(), expected)
         dialog.close()
         self.assertEqual(model.edits, {})
@@ -169,18 +190,18 @@ class EditorWindowTests(unittest.TestCase):
         dialog.rotate()
         dialog.reset()
         dialog.accept()
-        expected = model.preview_rgb("background-01", dialog.rgb)
-        self.assertEqual(model.rgb("background-01"), expected)
+        expected = model.preview_rgb("background-02", dialog.rgb)
+        self.assertEqual(model.rgb("background-02"), expected)
         self.assertEqual(source.getpixel((400, 200)), (255, 255, 255))
         self.editor.edit()
         self.editor.crop_dialog.accept()
-        self.assertEqual(model.rgb("background-01"), expected)
+        self.assertEqual(model.rgb("background-02"), expected)
         self.editor.reset()
         self.assertEqual(model.edits, {})
         self.assertFalse(self.editor.dirty)
 
     def test_saving_is_offline_even_while_pages_has_device_lease(self):
-        self.data.editor.replace("background-01", self.data.red)
+        self.data.editor.replace("background-02", self.data.red)
         self.editor.dirty = True
         self.editor.refresh()
         token = self.host.jobs.acquire("GitHub Pages")

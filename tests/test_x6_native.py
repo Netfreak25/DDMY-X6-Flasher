@@ -559,6 +559,74 @@ writeFileSync(output, packBackup(files, manifest));
                     backend.run("must_not_run", "reset")
                 run.assert_called_once()
 
+    def test_selected_backup_reads_pairs_once_exports_only_selection_and_reimports(self):
+        selections = [("mbrec.bin",), ("brec1.bin",), ("lfi.bin",),
+                      ("mbrec.bin", "brec0.bin"), ("mbrec_copy.bin", "brec1.bin"),
+                      ("mbrec.bin", "brec1.bin", "lfi.bin")]
+        for index, selected in enumerate(selections):
+            self.calls.clear()
+            target = self.base / f"selected-{index}.{'bin' if len(selected) == 1 else 'zip'}"
+            with self.subTest(selected=selected), self.simulated():
+                result = self.ops.dump(target, selected)
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(self.calls.count("read_lfi"), int("lfi.bin" in selected))
+            self.assertEqual(self.calls.count("read_brec0"), int(bool(set(selected) & {"mbrec.bin", "brec0.bin"})))
+            self.assertEqual(self.calls.count("read_brec1"), int(bool(set(selected) & {"mbrec_copy.bin", "brec1.bin"})))
+            if len(selected) == 1:
+                self.assertEqual(target.read_bytes(), self.files[selected[0]])
+            else:
+                with zipfile.ZipFile(target) as zipped:
+                    self.assertEqual(set(zipped.namelist()), {*selected, "manifest.json"})
+                imported = self.base / f"selected-import-{index}"
+                archive.import_backup(target, imported, self.profile, allow_partial=True)
+                with self.assertRaisesRegex(toolkit.ToolkitError, "not complete"):
+                    toolkit.verify_bundle(imported, self.profile)
+                picked = images.select_images((target,), self.base / f"selected-images-{index}", self.profile)
+                self.assertEqual(set(picked.areas), {name.split(".")[0].replace("_copy", "").rstrip("01") for name in selected})
+
+    def test_full_restore_backup_is_saved_before_writes_and_failure_stops(self):
+        destination = self.base / "before-restore.zip"
+        with self.simulated():
+            outcome = self.ops.restore(self.source, backup_destination=destination)
+        self.assertTrue(outcome["boot_verified"])
+        self.assertTrue(destination.is_file())
+        first_write = self.calls.index("write_mbrec")
+        self.assertIn("read_before", self.calls[:first_write])
+        self.assertEqual(self.calls[first_write - 1], "fwsc_start")
+        self.calls.clear()
+        with self.simulated(), mock.patch.object(archive, "save_checked", side_effect=OSError("disk full")), \
+                self.assertRaisesRegex(OSError, "disk full"):
+            self.ops.restore(self.source, backup_destination=self.base / "failed.zip")
+        self.assertFalse(any(name.startswith("write_") for name in self.calls))
+        self.assertIsNotNone(self.ops.pending_backup)
+
+    def test_single_failed_dump_is_marked_incomplete_zip_and_does_not_reset(self):
+        def failed(backend, name, *args, **kwargs):
+            if name == "read_lfi":
+                Path(args[-1]).write_bytes(self.image[:512])
+                raise toolkit.ToolkitError("incomplete LFI read")
+            return self.backend(backend, name, *args, **kwargs)
+        destination = self.base / "one.bin"
+        with self.simulated(failed):
+            outcome = self.ops.dump(destination, ("lfi.bin",))
+        self.assertEqual(outcome["status"], "incomplete")
+        self.assertNotIn("reset", self.calls)
+        self.assertFalse(destination.exists())
+        with zipfile.ZipFile(outcome["saved_path"]) as zipped:
+            self.assertEqual(zipped.read("lfi.bin"), self.image[:512])
+            self.assertEqual(json.loads(zipped.read("manifest.json"))["status"], "incomplete")
+
+    def test_restart_uses_identified_adfu_route_without_flash_session(self):
+        self.ops.serial = "TEST"
+        with mock.patch.object(native.x6_reset, "leave_adfu", return_value="Neustart bestätigt") as reset, \
+                mock.patch.object(toolkit, "start_fwsc", side_effect=AssertionError("flash session forbidden")):
+            self.assertTrue(self.ops.restart()["normal_mode"])
+            reset.assert_called_once()
+        with mock.patch.object(native.x6_reset, "leave_adfu", side_effect=toolkit.ToolkitError("Reset bestätigt, Normalmodus fehlt")), \
+                self.assertRaisesRegex(toolkit.ToolkitError, "Normalmodus fehlt"):
+            self.ops.restart()
+
+
 
 class ProcessTests(unittest.TestCase):
     def test_streamed_output_and_timeout_without_hardware(self):

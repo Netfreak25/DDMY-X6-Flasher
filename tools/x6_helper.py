@@ -88,7 +88,7 @@ class HelperWindow:
         style = ttk.Style(root)
         style.theme_use("clam")
         style.configure("TProgressbar", background=TEAL, troughcolor="#dceae5", borderwidth=0)
-        panel = tk.Frame(root, bg=BACKGROUND, padx=26, pady=18)
+        panel = tk.Frame(root, bg=BACKGROUND, padx=26, pady=12)
         panel.pack(fill="both", expand=True)
         top = tk.Frame(panel, bg=BACKGROUND)
         top.pack(fill="x")
@@ -132,6 +132,13 @@ class HelperWindow:
         self.dump_button.pack(side="left", padx=(0, 8))
         self.restore_button = self.button(row, "Sicherung wiederherstellen", self.restore, device=True)
         self.restore_button.pack(side="left")
+        self.regions_button = self.button(row, "Bereiche sichern", self.dump_regions, device=True)
+        self.regions_button.pack(side="left", padx=(8, 0))
+        self.restore_backup_checkbox = tk.Checkbutton(backup, text="Vor dem Schreiben sichern",
+                                                     variable=self.backup_before_flash, bg="white", fg=INK,
+                                                     activebackground="white", font=("Segoe UI", 9))
+        self.restore_backup_checkbox.pack(anchor="w")
+        self.controls.append(self.restore_backup_checkbox)
         self.label(backup, "MBREC, beide Bootkopien und LFI · Musik und SD-Karte sind nicht enthalten.",
                    background="white").pack(anchor="w", pady=(5, 0))
 
@@ -140,6 +147,8 @@ class HelperWindow:
         self.enter_button = self.button(modes, "ADFU betreten", lambda: self.mode("enter", "ADFU betreten"))
         self.reset_button = self.button(modes, "ADFU verlassen", lambda: self.mode("leave", "ADFU verlassen"))
         self.poweroff_button = self.button(modes, "Player ausschalten", lambda: self.mode("poweroff", "Player ausschalten"))
+        self.restart_button = self.button(top, "Player neustarten", lambda: self.start("Player neustarten", self.operations.restart))
+        self.restart_button.pack(side="right", padx=(0, 8))
         for button in (self.enter_button, self.reset_button, self.poweroff_button):
             button.pack(side="left", padx=(0, 8))
         self.label(panel, "Ausschalten: Nach Startbestätigung USB abziehen.").pack(anchor="w", pady=(4, 6))
@@ -165,6 +174,7 @@ class HelperWindow:
         self.pending_button = self.button(panel, "Gelesene Sicherung speichern", self.save_pending)
         bottom = tk.Frame(panel, bg=BACKGROUND)
         bottom.pack(side="bottom", fill="x", pady=(10, 0), before=top)
+        self.button(bottom, "Recovery-Hilfe", self.recovery).pack(side="left", padx=(0, 8))
         self.button(bottom, "Details", self.details).pack(side="left")
         self.button(bottom, "Bericht speichern", self.save_report).pack(side="left", padx=(8, 0))
         self.online_button = self.button(bottom, "Online-Flasher öffnen ↗", self.open_browser)
@@ -180,9 +190,9 @@ class HelperWindow:
         return tk.Label(parent, text=text, bg=background, fg="#607771", font=("Segoe UI", 9), justify="left")
 
     def section(self, parent, title: str):
-        frame = tk.Frame(parent, bg="white", padx=15, pady=8)
+        frame = tk.Frame(parent, bg="white", padx=15, pady=6)
         frame.pack(fill="x", pady=(0, 10))
-        tk.Label(frame, text=title, bg="white", fg=INK, font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 8))
+        tk.Label(frame, text=title, bg="white", fg=INK, font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 6))
         return frame
 
     def button(self, parent, text, command, *, primary=False, device=False):
@@ -269,6 +279,43 @@ class HelperWindow:
         if destination:
             self.start("Sicherung erstellen", lambda: self.operations.dump(Path(destination)))
 
+    def recovery(self):
+        """Recovery instructions remain available without probing USB hardware."""
+        messagebox.showinfo("X6 Recovery · ADFU",
+            "1. USB abziehen.\n2. Power drücken und gedrückt halten.\n"
+            "3. Zusätzlich Reset drücken und gedrückt halten.\n"
+            "4. USB anschließen, während Power UND Reset gehalten bleiben.\n"
+            "5. Nach der USB-Anmeldung beide loslassen.\n\n"
+            "Windows sollte ADFU 10D6:10D6 anzeigen. Dafür muss WinUSB installiert sein. "
+            "Der normale USB-Modus heißt 10D6:1101. Eine erfolgreiche ADFU-Verbindung "
+            "repariert die Firmware noch nicht.", parent=self.root)
+
+    def dump_regions(self):
+        """Select physical backup components; coupled reads are handled by the worker."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Bereiche sichern")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        choices = {name: tk.BooleanVar(value=True) for name in toolkit.BUNDLE_FILES}
+        for name, variable in choices.items():
+            tk.Checkbutton(dialog, text=toolkit.COMPONENT_LABELS[name], variable=variable).pack(anchor="w", padx=18, pady=3)
+        tk.Button(dialog, text="Alle auswählen", command=lambda: [value.set(True) for value in choices.values()]).pack(pady=5)
+
+        def save():
+            selected = tuple(name for name, variable in choices.items() if variable.get())
+            if not selected:
+                messagebox.showinfo("Bereiche auswählen", "Bitte mindestens einen Bereich auswählen.", parent=dialog)
+                return
+            single = len(selected) == 1
+            name = selected[0] if single else "x6-bereiche.x6backup.zip"
+            destination = filedialog.asksaveasfilename(parent=dialog, title="Bereiche speichern", initialfile=name,
+                                                       defaultextension=".bin" if single else ".x6backup.zip")
+            if destination:
+                dialog.destroy()
+                self.start("Bereiche sichern", lambda: self.operations.dump(Path(destination), selected))
+        tk.Button(dialog, text="Sichern", command=save).pack(padx=18, pady=10)
+        tk.Button(dialog, text="Abbrechen", command=dialog.destroy).pack(pady=(0, 10))
+
     def compare(self):
         selection = self.operations.selection
         if selection is None:
@@ -315,7 +362,15 @@ class HelperWindow:
             description += "\nDer Boot-Schreibweg ist nicht freigegeben. Ohne Boot-Rücklesung bleibt das Ergebnis unverifiziert."
         if self.backup.get() and messagebox.askokcancel(title, description, parent=self.root):
             source = Path(self.backup.get())
-            self.start(title, lambda: self.operations.restore(source, emergency))
+            destination = None
+            if self.backup_before_flash.get():
+                selected = filedialog.asksaveasfilename(parent=self.root, title="Rücksicherung vor Full Restore speichern",
+                                                       initialfile="x6-vor-restore.x6backup.zip", defaultextension=".x6backup.zip",
+                                                       filetypes=[("X6-Sicherung", "*.zip")])
+                if not selected:
+                    return
+                destination = Path(selected)
+            self.start(title, lambda: self.operations.restore(source, emergency, destination))
 
     def mode(self, action, title):
         self.start(title, lambda: self.operations.mode(action))
@@ -485,6 +540,7 @@ def self_test(window: HelperWindow, profile: toolkit.Profile, runtime: Path) -> 
     import x6_artwork as artwork
     import x6_picture as picture
     import x6_screensaver as screensaver
+    import x6_storage as storage
     from PIL import Image
 
     checked_formats = []
@@ -510,6 +566,11 @@ def self_test(window: HelperWindow, profile: toolkit.Profile, runtime: Path) -> 
     return {"ok": all(icons) and fits, "window_icons": icons, "http_pairing": http_checks,
             "controls": [button.cget("text") for button in window.controls], "buttons_fit": fits,
             "backup_default": window.backup_before_flash.get(),
+            "full_restore_backup_default": window.backup_before_flash.get(),
+            "restart_control": window.restart_button.cget("text"),
+            "recovery_available": True,
+            "storage_schema": storage.LAYOUT["schema"],
+            "screensaver_patch_enabled": False,
             "wait_progress_style": window.progress.cget("style"),
             "poweroff_payload_size": len(payload), "backend_hashes_checked": True,
             "device_access": False, "browser_started": False,

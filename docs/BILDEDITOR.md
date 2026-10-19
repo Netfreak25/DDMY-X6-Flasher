@@ -1,6 +1,6 @@
 # Bilder bearbeiten · Windows und Web
 
-Der Bildeditor in **v0.3.0-beta.7 (lokaler Build)** ersetzt vorhandene Bilder in deinen eigenen
+Der Bildeditor in **v0.3.0-beta.8 (lokaler Build)** bearbeitet Bilder in deinen eigenen
 Firmwaredateien. Er liefert keine Firmware oder Bildsammlung mit. Bearbeiten
 und Speichern benötigen weder Player noch Windows-Helfer auf der Website.
 
@@ -14,12 +14,13 @@ und Speichern benötigen weder Player noch Windows-Helfer auf der Website.
    wird eine vollständige Sicherung unter einem neuen Namen gespeichert. Nur ein
    vollständiges, gültiges Ergebnis wird als Arbeitsgrundlage geöffnet.
 
-Ein LFI allein bietet 13 Bildplätze. BREC allein bietet das frühe Startbild.
+Ein LFI allein bietet 13 Standardbildplätze und gegebenenfalls zusätzliche
+Hintergründe. BREC allein bietet das frühe Startbild.
 Fehlende Bereiche sind mit **Nicht geladen** markiert. MBREC enthält keinen
 editierbaren Bildplatz. Mehrere einzelne BINs bitte gemeinsam auswählen;
 erneutes Öffnen ersetzt die gesamte Arbeitsgrundlage.
 
-## Die 14 festen Plätze
+## Die 14 Standardplätze
 
 Die Galerie zeigt die tatsächlich geladenen Bilder, unabhängig von ihrem Motiv.
 Die Ressourcenindizes in der Tabelle sind nullbasiert.
@@ -41,11 +42,16 @@ Die Ressourcenindizes in der Tabelle sind nullbasiert.
 | Ausschaltbild | END.STY #0 im LFI |
 | Frühes Startbild | BREC, beim Flashen beide Bootkopien |
 
-Es können keine Plätze hinzugefügt oder gelöscht werden. Die Firmware entscheidet
-weiterhin, welchen der 11 Hintergründe der Screensaver verwendet.
-Bei Screensaver v7 ist der erste Platz fest schwarz und nicht bearbeitbar.
-Die zehn Motive dahinter bleiben bearbeitbar. Die vorbereitete variable
-Bilderliste ist die Grundlage einer späteren Erweiterung des Editors.
+Der erste Hintergrund ist immer fest schwarz und gesperrt. Die zehn weiteren
+Standardmotive lassen sich ersetzen und zurücksetzen, aber nicht löschen.
+Bei einem passenden vorhandenen Bilderkatalog können zusätzliche Motive
+hinzugefügt, ersetzt und gelöscht werden. Die Anzeige nennt freien Speicher
+und die Anzahl zusätzlich möglicher Bilder. Ohne Platz bleibt Hinzufügen gesperrt.
+Ältere Images ohne passenden Katalog behalten die feste Bildauswahl.
+
+**Der seitliche Bildwechsel des angepassten Screensavers ist auf dem Gerät
+weiterhin fehlerhaft.** Die Bildverwaltung repariert diesen Code nicht. Seine
+Nachrüstung und Aktualisierung sind in diesem Build deaktiviert.
 
 ## Motiv und Ausschnitt
 
@@ -72,7 +78,7 @@ der Kopplung allein verändert noch kein Bild.
 
 ## Automatische Hintergrundaufbereitung
 
-Bei erkanntem Kontur-Zeichenpfad erhalten die bearbeitbaren
+Bei passendem vorhandenen Bilderkatalog erhalten die bearbeitbaren
 Bildschirmschoner-Hintergründe nach Ausschnitt und Drehung einen dezenten,
 an Bildschirmkoordinaten gebundenen Helligkeitsverlauf. Vorschau und Export
 verwenden dieselben RGB565-Pixel. Uhr, Datum und Kontur zeichnet der Player;
@@ -86,13 +92,8 @@ bleibt es auch nach Reset als geändert markiert. Wiederholte Aufbereitung
 dunkelt das Motiv nicht weiter ab. Die Uploadquelle bleibt während der Sitzung
 erhalten; ein erneutes Öffnen kann frühere Ausschnitte nicht rekonstruieren.
 
-Bloßes Laden installiert keinen Screensaver und verändert keine Bildpixel.
-Bei älteren unterstützten Images bietet der Editor ausdrücklich
-**Bildschirmschoner nachrüsten/aktualisieren** an. Erst die Auswahl dieser
-Funktion übernimmt v7 in die Arbeitskopie. Bereits aktueller Code wird erkannt
-und nicht erneut gepatcht; Hello X6 bleibt bei einem Upgrade erhalten.
-Bei Hintergrundänderungen ohne passenden Zeichner weist der Editor auf das
-optionale Upgrade hin. Unbekannter Code wird nicht gepatcht.
+Bloßes Laden verändert keine Bildpixel. Der Editor installiert oder aktualisiert
+keinen Screensaver und bietet derzeit keinen Codepatch an.
 Startbild, frühes BREC-Startbild und Ausschaltbild erhalten keinen Verlauf.
 
 Das versionierte Profil liegt in `tools/x6_artwork.json` (Paket:
@@ -100,7 +101,8 @@ Das versionierte Profil liegt in `tools/x6_artwork.json` (Paket:
 oberer Smoothstep `(0,255) → (78,210) → (190,255)`, für Hintergrund 1 um
 49 Pixel verschoben; unten `(225,255) → (319,225)`. Ganzzahlige Berechnung,
 Abrunden erst nach Smoothstep, RGB565-Kanalbegrenzung ohne erneute Abdunklung.
-Code-/Font-Hashes erkennen die unterstützte Firmware unabhängig von Bildern.
+Die Bildverwaltung prüft Katalog, Ressourcenbereiche und Speicherzuordnung;
+daraus wird kein funktionierender Bildwechsel auf Hardware abgeleitet.
 
 ## LFI-Größe und Nullpadding
 
@@ -114,7 +116,14 @@ zusätzliches Padding erhält. Bilder, Programmcode und Quelldatei bleiben erhal
 Reparaturen werden im Protokoll bzw.
 Paketmanifest dokumentiert. Bereits gültige Images bleiben bytegleich.
 
-Das gilt auch nach späteren Ergänzungen oder Löschungen von Ressourcen.
+Zusätzliche Bilder verwenden ausschließlich die ausdrücklich zugeordnete,
+nullgefüllte Reserve `X6FREE.BIN`. Pro Motiv sind 153.600 Bytes erforderlich.
+Beim Hinzufügen und Löschen werden Dateien neu angeordnet, Katalog und
+Hintergrundanzahl aktualisiert und alle Prüfsummen erneuert. Das LFI bleibt
+gleich groß und vollständig zugeordnet. Nur eigene Zusatzbilder sind löschbar;
+Programmdateien werden niemals anhand scheinbar freier Nullfolgen gekürzt.
+Nach erneutem Öffnen werden die verwalteten Zusatzbilder wiedererkannt.
+
 Beschädigte Prüfsummen, überlappende Dateien oder ungültige Adressen werden
 abgewiesen: Daraus lässt sich der beabsichtigte Inhalt nicht rekonstruieren.
 Gespeicherte Gerätedumps bleiben unveränderte Messdaten.

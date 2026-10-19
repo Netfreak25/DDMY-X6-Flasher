@@ -63,7 +63,7 @@ def curve(y: int, points: list[list[int]]) -> int:
 
 
 def limits(profile: dict, slot: int) -> list[int]:
-    if not 1 <= slot <= profile["background_count"]:
+    if not 1 <= slot <= CATALOG_CAPACITY:
         raise ValueError("Unbekannter Hintergrundplatz.")
     shift = profile["first_slot_shift_y"] if slot == 1 else 0
     upper = [[y + shift, value] for y, value in profile["upper"]]

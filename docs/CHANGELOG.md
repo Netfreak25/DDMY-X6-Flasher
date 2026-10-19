@@ -1,5 +1,29 @@
 # Änderungen
 
+## 0.3.0-beta.8 – lokal, unveröffentlicht
+
+- Screensaver-Einbau und -Aktualisierung in beiden Oberflächen deaktiviert.
+  Der seitliche Bildwechsel bleibt ein ungelöster Gerätefehler.
+- Bildverwaltung für den vorhandenen Katalog: Schwarz unveränderlich, zehn
+  Standardmotive ersetzbar, Zusatzmotive innerhalb der verfügbaren Reserve
+  hinzufügbar und löschbar. Kein Screensaver-Code wird geändert.
+- Gemeinsames Speicherprofil für Python/JavaScript. Nur die vollständig
+  nullgefüllte Datei `X6FREE.BIN` gilt als Reserve; Änderungen bleiben atomar,
+  gleich groß, vollständig zugeordnet und prüfsummengültig.
+- Optionales Vorabbackup nun auch beim Full Restore, mit derselben Checkbox-
+  Einstellung wie Flash und Bildeditor. Image- und Rückleseprüfung bleiben.
+- Alle fünf Firmwaredateien einzeln oder gemeinsam sichern: eine als BIN,
+  mehrere als ZIP. Absichtliche Teilsicherung ist keine vollständige Rücksicherung.
+- „Player neustarten“ und offline erreichbare Recovery-Hilfe mit der am X6
+  bestätigten Power-/Reset-Abfolge. Wartephasen bleiben ohne Laufanimation.
+- 156 Python-Tests, 74 JavaScript-Tests und 28 Browser-Tests bestanden;
+  vier Python- und zwei JavaScript-Tests mit optionalen privaten Voraussetzungen
+  übersprungen. Tk-Oberflächentests laufen wegen Tcl-Lebensdauer getrennt.
+  Ruff, ESLint und EXE-Selbsttest bestanden, ohne Gerätezugriff.
+- Abschlusstests reproduzierten einen abgeschnittenen Speichern-Knopf bei
+  mehrzeiligem Fehler und einen falschen Profilpfad in der gepackten EXE.
+  Abstände bzw. Ressourcenpfad korrigiert; passende Tests danach bestanden.
+
 ## 0.3.0-beta.7 – lokal, unveröffentlicht
 
 - Checkbox **Vor dem Flashen sichern** in Windows/Web und im Bildeditor.

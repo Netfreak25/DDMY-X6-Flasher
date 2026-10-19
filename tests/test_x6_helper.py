@@ -32,6 +32,23 @@ class HelperTests(unittest.TestCase):
             self.root.after_cancel(self.window.poll_id)
         self.window.poll()
 
+    def test_full_restore_checkbox_shares_setting_and_cancel_stops_before_worker(self):
+        self.assertTrue(self.window.backup_before_flash.get())
+        self.window.restore_backup_checkbox.invoke()
+        self.assertFalse(self.window.backup_before_flash.get())
+        self.window.restore_backup_checkbox.invoke()
+        self.window.backup.set("source.zip")
+        with mock.patch.object(helper.messagebox, "askokcancel", return_value=True), \
+                mock.patch.object(helper.filedialog, "asksaveasfilename", return_value=""), \
+                mock.patch.object(self.window, "start") as start:
+            self.window.restore()
+            start.assert_not_called()
+        with mock.patch.object(helper.messagebox, "showinfo") as info:
+            self.window.recovery()
+            text = info.call_args.args[1]
+            self.assertIn("Power UND Reset", text)
+            self.assertIn("10D6:10D6", text)
+
     def test_passive_start_and_native_connection_without_api_or_browser(self):
         self.assertFalse(self.window.connected)
         self.assertEqual(self.window.dump_button.cget("state"), "disabled")
@@ -147,6 +164,7 @@ class HelperTests(unittest.TestCase):
                 self.assertIn("Ohne neue Rücksicherung", confirm.call_args.args[1])
 
     def test_restore_folder_and_unverified_result_are_visible(self):
+        self.window.backup_before_flash.set(False)
         with mock.patch.object(helper.filedialog, "askdirectory", return_value="backup-folder"):
             self.window.choose_folder()
         self.assertEqual(self.window.backup.get(), "backup-folder")
@@ -154,7 +172,7 @@ class HelperTests(unittest.TestCase):
                 mock.patch.object(self.window.operations, "restore", return_value={"message": "Boot-Rücklesung offen", "warning": True}) as restore:
             self.window.restore()
             self.finish()
-            restore.assert_called_once_with(Path("backup-folder"), False)
+            restore.assert_called_once_with(Path("backup-folder"), False, None)
         self.assertIn("Hinweis", self.window.status.get())
         self.assertIn("Boot-Rücklesung", self.window.activity.get())
 

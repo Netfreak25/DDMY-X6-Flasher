@@ -83,7 +83,7 @@ test('repaired import can be exported without changing images or opting into the
   assert.equal(model.hasChanges, true);
   assert.deepEqual(model.changedAreas, ['lfi']);
   assert.equal(model.patchedLfi, null);
-  assert.equal(model.patchState, 'install');
+  assert.equal(model.patchState, 'disabled');
   assert.deepEqual((await model.changedSelection()).components.lfi, versions.install);
   assert.deepEqual(selection.originals[0].data, raw);
 });

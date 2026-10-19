@@ -28,6 +28,8 @@ DEFAULT_RUNTIME = PRIVATE_ROOT / "toolkit" / "runtime"
 RUN_ROOT = PRIVATE_ROOT / "toolkit" / "runs"
 BINDING_PATH = PRIVATE_ROOT / "toolkit" / "device.json"
 BUNDLE_FILES = ("mbrec.bin", "mbrec_copy.bin", "brec0.bin", "brec1.bin", "lfi.bin")
+COMPONENT_LABELS = {"mbrec.bin": "MBREC", "mbrec_copy.bin": "MBREC-Kopie",
+                    "brec0.bin": "BREC 0", "brec1.bin": "BREC 1", "lfi.bin": "LFI"}
 
 
 def use_desktop_workspace() -> None:
@@ -424,20 +426,24 @@ def write_manifest(directory: Path, manifest: dict[str, object]) -> None:
     temporary.replace(destination)
 
 
-def verify_bundle(directory: Path, profile: Profile, *, allow_padding: bool = False) -> dict[str, Any]:
+def verify_bundle(directory: Path, profile: Profile, *, allow_padding: bool = False, allow_partial: bool = False) -> dict[str, Any]:
     """Validate every file in a complete X6 restore bundle."""
     try:
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ToolkitError(f"invalid backup manifest: {exc}") from exc
-    if manifest.get("schema") != 1 or manifest.get("status") != "complete":
+    partial = allow_partial and manifest.get("status") == "partial"
+    if manifest.get("schema") != 1 or manifest.get("status") != "complete" and not partial:
         raise ToolkitError("backup manifest is not complete")
     if manifest.get("model") != profile.model or manifest.get("nand_id") != profile.nand_id.hex():
         raise ToolkitError("backup does not match the X6 NAND profile")
     records = manifest.get("files", {})
-    if not isinstance(records, dict) or any(name not in records for name in BUNDLE_FILES):
+    names = manifest.get("requested_components") if partial else BUNDLE_FILES
+    if (not isinstance(names, (list, tuple)) or not names or len(set(names)) != len(names)
+            or any(name not in BUNDLE_FILES for name in names)
+            or not isinstance(records, dict) or set(records) != set(names)):
         raise ToolkitError("backup is missing a required boot or firmware file")
-    for name in BUNDLE_FILES:
+    for name in names:
         path = directory / name
         if not path.is_file():
             raise ToolkitError(f"backup file missing: {name}")
@@ -448,9 +454,9 @@ def verify_bundle(directory: Path, profile: Profile, *, allow_padding: bool = Fa
         )
         if actual["size"] != records[name].get("size") or actual["sha256"] != records[name].get("sha256"):
             raise ToolkitError(f"backup checksum mismatch: {name}")
-    if (directory / "mbrec.bin").read_bytes() != (directory / "mbrec_copy.bin").read_bytes():
+    if {"mbrec.bin", "mbrec_copy.bin"} <= set(names) and (directory / "mbrec.bin").read_bytes() != (directory / "mbrec_copy.bin").read_bytes():
         raise ToolkitError("MBREC copies in backup differ")
-    if (directory / "brec0.bin").read_bytes() != (directory / "brec1.bin").read_bytes():
+    if {"brec0.bin", "brec1.bin"} <= set(names) and (directory / "brec0.bin").read_bytes() != (directory / "brec1.bin").read_bytes():
         raise ToolkitError("BREC copies in backup differ")
     return manifest
 

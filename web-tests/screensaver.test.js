@@ -40,16 +40,16 @@ test('supported preview/apply/reset/export with untouched legacy and boot pictur
   assert.equal(model.contour, false);
   assert.deepEqual(model.build(), selection.components);
   const rgb = new Uint8Array(240 * 320 * 3).fill(255);
-  model.replace('background-01', rgb); assert.deepEqual(model.rgb('background-01'), rgb);
-  model.reset('background-01'); model.contour = true;
-  for (const id of ['background-01', 'background-02', 'background-11']) {
+  model.replace('background-02', rgb); assert.deepEqual(model.rgb('background-02'), rgb);
+  model.reset('background-02'); model.contour = true;
+  for (const id of ['background-02', 'background-03', 'background-11']) {
     const preview = model.previewRgb(id, rgb);
     model.replace(id, rgb); assert.deepEqual(model.rgb(id), preview);
     const bytes = model.pixels(id).slice(); model.replace(id, model.rgb(id));
     assert.deepEqual(model.pixels(id), bytes);
   }
   for (const id of ['startup', 'boot-startup', 'shutdown']) assert.deepEqual(model.previewRgb(id, rgb), rgb);
-  model.reset('background-01'); assert.equal(model.edits.has('background-01'), false);
+  model.reset('background-02'); assert.equal(model.edits.has('background-02'), false);
   const reopened = await Artwork.create(await model.changedSelection(), device, config);
   assert.deepEqual(reopened.pixels('background-02'), model.pixels('background-02'));
 });

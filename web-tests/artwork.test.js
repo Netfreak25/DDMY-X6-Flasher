@@ -24,7 +24,14 @@ test('14 fixed slots; no-op and reset retain all original bytes', async () => {
   const {profile, selection} = await artworkFixture(), editor = await Artwork.create(selection, profile, config);
   assert.equal(editor.ranges.size, 14);
   assert.deepEqual(editor.build(), selection.components);
-  for (const id of editor.ranges.keys()) { editor.replace(id, red); assert.deepEqual(editor.rgb(id), red); editor.reset(id); assert.equal(editor.edits.size, 0); }
+  for (const id of editor.ranges.keys()) {
+    if (editor.ranges.get(id).slot.fixed_black) {
+      assert.throws(() => editor.replace(id, red), /Schwarz/);
+      assert.throws(() => editor.reset(id), /Schwarz/);
+      continue;
+    }
+    editor.replace(id, red); assert.deepEqual(editor.rgb(id), red); editor.reset(id); assert.equal(editor.edits.size, 0);
+  }
   assert.deepEqual(editor.build(), selection.components);
 });
 
@@ -91,4 +98,43 @@ test('crop geometry and input limits/animation checked before browser decoding',
   png.set(new TextEncoder().encode('acTL'), 37);
   assert.throws(() => pictureInfo(png, config), /Animierte/);
   assert.throws(() => pictureInfo(new Uint8Array(20), config), /gültiges/);
+});
+
+test('managed add/delete compaction retains reset originals and pending edits; export reopens', async () => {
+  const {profile, selection} = await artworkFixture(undefined, true), editor = await Artwork.create(selection, profile, config);
+  const original = editor.build(), capacity = editor.storage.capacity;
+  assert.equal(editor.contour, true); assert.equal(editor.hasChanges, false);
+  editor.replace('startup', red);
+  const blue = new Uint8Array(red.length);
+  for (let i = 2; i < blue.length; i += 3) blue[i] = 255;
+  const first = editor.addBackground(red), second = editor.addBackground(blue);
+  assert.deepEqual([first, second], ['background-12', 'background-13']);
+  assert.equal(editor.storage.capacity, capacity - 2);
+  const snapshot = editor.pixels(second, true).slice();
+  editor.replace(second, red);
+  assert.equal(editor.deleteBackground(first).get(second), first);
+  assert.deepEqual(editor.pixels(first, true), snapshot);
+  editor.reset(first); editor.reset('startup');
+  assert.deepEqual(editor.pixels(first), snapshot);
+  const reopened = await Artwork.create(await editor.changedSelection(), profile, config);
+  assert.deepEqual(reopened.pixels(first), snapshot);
+  assert.equal(reopened.storage.capacity, capacity - 1);
+  editor.deleteBackground(first);
+  assert.deepEqual(editor.build(), original);
+  assert.equal(editor.hasChanges, false);
+});
+
+test('new-image treatment is idempotent and protected/invalid operations are atomic', async () => {
+  const {profile, selection} = await artworkFixture(undefined, true), editor = await Artwork.create(selection, profile, config);
+  const white = new Uint8Array(red.length).fill(255), id = editor.addBackground(white), expected = editor.prepareNew(white);
+  assert.deepEqual(editor.pixels(id), expected);
+  editor.replace(id, editor.rgb(id)); assert.deepEqual(editor.pixels(id), expected);
+  const before = editor.build();
+  for (const protectedId of ['background-01', 'background-02']) assert.throws(() => editor.deleteBackground(protectedId), /Standardbilder/);
+  assert.throws(() => editor.addBackground(new Uint8Array(3)), /240/);
+  assert.deepEqual(editor.build(), before);
+  await assert.rejects(editor.applyScreensaver(), /deaktiviert/);
+  const legacy = await artworkFixture(), old = await Artwork.create(legacy.selection, legacy.profile, config);
+  assert.throws(() => old.addBackground(white), /Bilderkatalog/);
+  assert.equal(old.hasChanges, false);
 });

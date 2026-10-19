@@ -62,6 +62,9 @@ while ($true) {
     Start-Sleep -Seconds 3
 }
 # Setup independently checks all X6 processes again before replacing files.
+if ((Test-Path -LiteralPath $lockPath) -and -not (Test-DeviceIdle)) {
+    throw 'Ein Geräteauftrag läuft weiterhin. Keine Installation.'
+}
 $arguments = @('/ALLUSERS', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/SP-', '/NORESTART',
                '/NOCLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS',
                ('/DIR="{0}"' -f $targetPath), ('/LOG="{0}"' -f [IO.Path]::GetFullPath($LogPath)))

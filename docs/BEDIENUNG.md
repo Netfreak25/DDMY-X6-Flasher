@@ -18,7 +18,7 @@ stoppt das Setup. Es beendet keine Prozesse und erzwingt keinen Neustart.
 Private Sicherungen und Einstellungen in LocalAppData werden nicht gelöscht.
 
 **Trennen** in der Windows-App hebt die Geräteauswahl auf; es startet den
-Player nicht neu. Dafür **ADFU verlassen** verwenden. Der ADFU-Wechsel bei einer
+Player nicht neu. Dafür **Player neustarten** verwenden. Der ADFU-Wechsel bei einer
 Sicherung oder einem Schreibauftrag erfolgt automatisch.
 
 ## Sicherung erstellen
@@ -27,6 +27,14 @@ Sicherung oder einem Schreibauftrag erfolgt automatisch.
 `.x6backup.zip` angeben. Die fünf Binärdateien und ein kompatibles
 `manifest.json` werden gespeichert. Ein Teilfehler wird ausdrücklich als
 **unvollständig** angezeigt. Es wird keine fehlende Bootkopie erfunden.
+
+Für eine Teilsicherung **Bereiche sichern** verwenden: MBREC, MBREC-Kopie,
+BREC 0, BREC 1 und LFI lassen sich einzeln auswählen. Ein erfolgreich gelesener
+Einzelbereich wird als BIN gespeichert, mehrere als ZIP mit Hashmanifest.
+Eine absichtliche Teilsicherung ist ausdrücklich als solche gekennzeichnet;
+ein Lesefehler bleibt eine unvollständige Sicherung. Teilpakete können über
+die Firmwareauswahl importiert werden, nicht als vollständige Wiederherstellung.
+Die Auswahl enthält keine Musikdateien, SD-Daten oder den übrigen NAND-Speicher.
 
 Schlägt nur das Speichern fehl, erscheint **Gelesene Sicherung speichern**.
 Dieser Knopf speichert die vorhandenen Daten ohne erneuten Gerätezugriff.
@@ -83,10 +91,11 @@ laden. 11 Hintergründe, normales Startbild, Ausschaltbild und frühes BREC-Star
 können ersetzt, zugeschnitten und zurückgesetzt werden. Die Startbilder sind
 bei geladenem LFI + BREC standardmäßig gekoppelt.
 
-Ein unterstütztes älteres Image kann über die ausdrückliche
-Screensaver-Option auf v7 aktualisiert werden. Bereits aktuelle Firmware wird
-erkannt. Neue Hintergrundbilder erhalten dann automatisch den dezenten Verlauf;
-bei v7 bleibt der erste Platz fest schwarz. Das Upgrade ist freiwillig.
+Der erste Hintergrund bleibt immer schwarz und gesperrt. Die zehn Standardmotive
+sind nur ersetzbar. Bei passendem Katalog und freier Reserve können zusätzliche
+Hintergründe hinzugefügt, ersetzt und gelöscht werden; ihre Aufbereitung enthält
+den dezenten Verlauf. Screensaver-Codepatches sind deaktiviert. Der bekannte
+Fehler beim seitlichen Bildwechsel auf dem Gerät bleibt offen.
 Import und Export prüfen zusätzlich die LFI-Größenzuordnung und korrigieren
 unzugeordnetes Padding in einer Arbeitskopie. Originaldateien bleiben erhalten.
 
@@ -106,6 +115,12 @@ Ein beschädigter LFI-Header auf dem Gerät verhindert den LFI-Vergleich nicht.
 Offsets und Hashes stehen in **Details**. Es wird nicht in den Flash geschrieben.
 
 ## Sicherung wiederherstellen
+
+Auch hier gilt **Vor dem Flashen sichern**, standardmäßig aktiviert und mit der
+Firmwareauswahl sowie dem Bildeditor synchronisiert. Ist die Option aktiviert,
+wird vor dem ersten Schreibbefehl eine vollständige Sicherung erfolgreich
+gespeichert. Abbruch oder Speicher-/Lesefehler verhindert das Schreiben.
+Abwählen überspringt nur die Vorabsicherung, nicht die Eingangs- und Rückleseprüfung.
 
 ZIP-Datei oder bisherigen Toolkit-Ordner auswählen, dann
 **Sicherung wiederherstellen**. Vollständigkeit, Modell, NAND, Größen, Hashes
@@ -169,6 +184,14 @@ Rücklesung, beide BREC-Kopien und LFI. Musik und SD-Karte gehören nicht dazu.
 
 ## Prüfstand
 
-Version 0.3.0-beta.3: automatisiert und mit vorhandenen Dateien offline geprüft,
+Version 0.3.0-beta.8: automatisiert und mit vorhandenen Dateien offline geprüft,
 **auf Hardware unverifizierter Build-Kandidat**. Für diese Version wurde der
 physische Player nicht angesprochen.
+
+## Player bleibt im Startbild oder wird nicht erkannt
+
+**Recovery-Hilfe** ist auch ohne Verbindung verfügbar. USB abziehen, Power
+gedrückt halten, zusätzlich Reset gedrückt halten, dann USB anschließen,
+während beide weiterhin gehalten werden. Erst nach USB-Anmeldung loslassen.
+Es gibt keine belegte feste Haltezeit. Die vollständige Anleitung mit
+ADFU-Kennung und WinUSB-Hinweis steht in [Recovery](recovery.md).

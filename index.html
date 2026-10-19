@@ -22,7 +22,7 @@
     <section class="device-panel" aria-labelledby="device-heading">
       <div class="player-symbol" aria-hidden="true"><span>X6</span><i></i></div>
       <div class="device-info"><div class="device-heading"><h2 id="device-heading">Dein X6</h2><span id="device-badge" class="badge">Nicht verbunden</span></div><p id="device-description">Schließe den Player an und verbinde ihn mit dem Toolkit.</p></div>
-      <div class="device-actions"><button id="connect" class="primary" data-control>Verbinden <span aria-hidden="true">↗</span></button><button id="restart" class="quiet" data-control hidden>Player starten</button></div>
+      <div class="device-actions"><button id="connect" class="primary" data-control>Verbinden <span aria-hidden="true">↗</span></button><button id="restart" class="quiet" data-control hidden>Player neustarten</button></div>
     </section>
 
     <section class="file-panel" aria-labelledby="file-heading">
@@ -31,8 +31,8 @@
     </section>
 
     <section class="actions-grid" aria-label="Aktionen">
-      <article class="action-card"><span class="card-icon" aria-hidden="true">↧</span><h2>Sicherung erstellen</h2><p>Bootdatensätze und Firmware gemeinsam sichern. Musik und SD-Karte bleiben unberührt.</p><button id="dump" class="secondary" data-control disabled>Sicherung erstellen <span aria-hidden="true">→</span></button><small>Full-Dump · ungefähr 62 MB</small></article>
-      <article class="action-card"><span class="card-icon" aria-hidden="true">↶</span><h2>Sicherung wiederherstellen</h2><p>Eine vollständige Sicherung laden und Bootdatensätze samt Firmware zurückspielen.</p><div class="backup-picker"><label class="text-button">ZIP auswählen<input id="backup-file" type="file" accept=".zip" data-control></label><span>oder</span><label class="text-button">Ordner öffnen<input id="backup-folder" type="file" webkitdirectory multiple data-control></label></div><button id="restore" class="secondary" data-control disabled>Wiederherstellen <span aria-hidden="true">→</span></button><small id="backup-info">Noch keine Sicherung ausgewählt</small></article>
+      <article class="action-card"><span class="card-icon" aria-hidden="true">↧</span><h2>Sicherung erstellen</h2><p>Bootdatensätze und Firmware gemeinsam sichern. Musik und SD-Karte bleiben unberührt.</p><button id="dump" class="secondary" data-control disabled>Sicherung erstellen <span aria-hidden="true">→</span></button><button id="dump-regions" class="quiet" data-control disabled>Bereiche sichern</button><small>Full-Dump · ungefähr 62 MB</small></article>
+      <article class="action-card"><span class="card-icon" aria-hidden="true">↶</span><h2>Sicherung wiederherstellen</h2><p>Eine vollständige Sicherung laden und Bootdatensätze samt Firmware zurückspielen.</p><div class="backup-picker"><label class="text-button">ZIP auswählen<input id="backup-file" type="file" accept=".zip" data-control></label><span>oder</span><label class="text-button">Ordner öffnen<input id="backup-folder" type="file" webkitdirectory multiple data-control></label></div><label class="coupling"><input id="restore-backup" type="checkbox" data-control checked> Vor dem Schreiben sichern</label><button id="restore" class="secondary" data-control disabled>Wiederherstellen <span aria-hidden="true">→</span></button><small id="backup-info">Noch keine Sicherung ausgewählt</small></article>
       <article class="action-card"><span class="card-icon" aria-hidden="true">↑</span><h2>Firmware flashen</h2><p>Erkannte Bereiche einzeln oder zusammen aktualisieren. Anschließend vollständig zurücklesen und prüfen.</p><label class="coupling"><input id="flash-backup" type="checkbox" data-control checked> Vor dem Flashen sichern</label><button id="flash" class="primary" data-control disabled>Auswahl flashen <span aria-hidden="true">→</span></button><small>Automatische Erkennung · MBREC, BREC und LFI</small></article>
       <article class="action-card"><span class="card-icon" aria-hidden="true">⇄</span><h2>Mit Gerät vergleichen</h2><p>Die ausgewählte Firmware Byte für Byte mit dem Inhalt deines Players vergleichen.</p><button id="verify" class="secondary" data-control disabled>Vergleichen <span aria-hidden="true">→</span></button><small>Kein Schreiben in den Flash</small></article>
     </section>
@@ -49,16 +49,16 @@
         <p id="artwork-info">LFI und BREC gemeinsam oder eine vollständige Sicherung öffnen. Die Quelldateien bleiben unverändert.</p>
         <label class="coupling"><input id="artwork-coupled" type="checkbox" data-art-control> Startbilder gemeinsam ändern</label>
         <div class="artwork-toolbar">
-          <button id="artwork-screensaver" class="secondary" data-art-control>Screensaver nachrüsten</button>
+          <button id="artwork-screensaver" class="secondary" hidden disabled>Screensaver nachrüsten</button>
           <p id="artwork-screensaver-info" class="artwork-hint" role="status"></p>
         </div>
         <div class="artwork-workspace">
-          <div id="artwork-gallery" class="artwork-gallery" aria-label="14 feste Bildplätze"></div>
+          <div id="artwork-gallery" class="artwork-gallery" aria-label="Bildplätze"></div>
           <div class="artwork-detail"><h3 id="artwork-title">Bildplatz auswählen</h3>
             <div class="artwork-previews"><figure><canvas id="artwork-original" width="240" height="320"></canvas><figcaption>Original</figcaption></figure><figure><canvas id="artwork-preview" width="240" height="320"></canvas><figcaption>Ergebnis · RGB565</figcaption></figure></div>
-            <div class="artwork-toolbar"><button id="artwork-replace" class="secondary" data-art-control>Ersetzen</button><button id="artwork-edit" class="secondary" data-art-control>Bearbeiten</button><button id="artwork-reset" class="quiet" data-art-control>Änderung zurücksetzen</button></div>
+            <p id="artwork-capacity" class="artwork-hint"></p><div class="artwork-toolbar"><button id="artwork-add" class="secondary" data-art-control>Bild hinzufügen</button><button id="artwork-delete" class="quiet" data-art-control>Zusatzbild löschen</button><input type="file" id="artwork-add-picture" accept="image/png,image/jpeg,image/webp" hidden><button id="artwork-replace" class="secondary" data-art-control>Ersetzen</button><button id="artwork-edit" class="secondary" data-art-control>Bearbeiten</button><button id="artwork-reset" class="quiet" data-art-control>Änderung zurücksetzen</button></div>
             <input id="artwork-picture" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-            <p class="artwork-hint">240 × 320 · RGB565<br>Statisches PNG, JPEG oder WebP · bis 25 MiB / 40 MP<br>14 feste Plätze. Keine Bilder hinzufügen oder löschen.</p>
+            <p class="artwork-hint">240 × 320 · RGB565<br>Statisches PNG, JPEG oder WebP · bis 25 MiB / 40 MP<br>Schwarz geschützt · zehn Standardmotive ersetzbar · Zusatzbilder nach freiem Speicher.</p>
           </div>
         </div>
         <label class="coupling"><input id="artwork-backup" type="checkbox" data-control checked> Vor dem Flashen sichern</label>
@@ -75,6 +75,10 @@
       <details id="details"><summary>Details</summary><pre id="report">Noch kein Vorgang gestartet.</pre><button id="save-report" class="text-button">Bericht speichern</button></details>
     </section>
     <footer><a id="repository-link" href="https://github.com/Netfreak25/DDMY-X6-Flasher">Projekt &amp; Anleitung ↗</a><span>Windows · Chrome / Edge · WebUSB</span></footer>
+    <details id="recovery-help"><summary>Recovery-Hilfe · Player bleibt schwarz oder startet wiederholt</summary>
+      <ol><li>USB abziehen.</li><li>Power drücken und gedrückt halten.</li><li>Zusätzlich Reset drücken und gedrückt halten.</li><li>USB anschließen, während <strong>Power UND Reset</strong> weiterhin gehalten bleiben.</li><li>Nach der USB-Anmeldung beide loslassen.</li></ol>
+      <p>Windows sollte ADFU <code>10D6:10D6</code> anzeigen; dafür muss WinUSB installiert sein. Der normale USB-Modus heißt <code>10D6:1101</code>. ADFU ermöglicht die Wiederherstellung, repariert aber noch keine Firmware.</p>
+    </details>
   </main>
   <dialog id="confirmation"><form method="dialog"><p class="eyebrow">BITTE BESTÄTIGEN</p><h2 id="confirm-title"></h2><p id="confirm-description"></p><label id="emergency-option" class="emergency" hidden><input id="emergency-check" type="checkbox">Notfall-Wiederherstellung aktivieren</label><div class="dialog-actions"><button value="cancel" class="secondary">Abbrechen</button><button id="confirm-go" value="confirm" class="primary">Starten</button></div></form></dialog>
   <dialog id="artwork-crop" aria-labelledby="crop-heading">
@@ -89,5 +93,11 @@
     </div></div>
     <div class="dialog-actions"><button id="crop-cancel" class="secondary">Abbrechen</button><button id="crop-apply" class="primary">Übernehmen</button></div>
   </dialog>
+<dialog id="regions-dialog"><form method="dialog"><h2>Bereiche sichern</h2>
+  <p>Nur Firmwarebereiche; Musik und SD-Karte sind nicht enthalten.</p>
+  <div id="region-options"></div><button type="button" id="regions-all" class="quiet">Alle auswählen</button>
+  <p>Ein Bereich wird als BIN gespeichert, mehrere als ZIP mit Prüfsummen.</p>
+  <button value="cancel" class="quiet">Abbrechen</button><button id="regions-save" value="save" class="primary">Sichern</button>
+</form></dialog>
 </body>
 </html>

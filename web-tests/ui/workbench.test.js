@@ -10,16 +10,22 @@ import { packBackup } from '../../lib/archive.js';
 import { profile, files as original, payload } from '../fixtures.js';
 import { artworkFixture, config as artworkConfig } from '../artwork-fixture.js';
 import { Artwork } from '../../lib/artwork.js';
-import { sha256, validateLfi, view, wordSum } from '../../lib/formats.js';
+import { sha256, view, wordSum } from '../../lib/formats.js';
 import { patchFixture } from '../screensaver-patch-fixture.js';
 
 let server, browser, origin;
 const artworkData = await artworkFixture();
 artworkData.profile.runtime_sha256 = profile.runtime_sha256;
 const artworkModel = await Artwork.create(artworkData.selection, artworkData.profile, artworkConfig);
-artworkModel.replace('background-01', new Uint8Array(240 * 320 * 3).fill(255));
+artworkModel.replace('background-02', new Uint8Array(240 * 320 * 3).fill(255));
 const artworkFiles = await artworkModel.packageFiles();
 const artworkZip = packBackup(artworkFiles, JSON.parse(new TextDecoder().decode(artworkFiles['manifest.json'])));
+const managedArtworkData = await artworkFixture(undefined, true);
+managedArtworkData.profile.runtime_sha256 = profile.runtime_sha256;
+const managedArtworkModel = await Artwork.create(managedArtworkData.selection, managedArtworkData.profile, artworkConfig);
+managedArtworkModel.replace('background-02', new Uint8Array(240 * 320 * 3).fill(255));
+const managedArtworkFiles = await managedArtworkModel.packageFiles();
+const managedArtworkZip = packBackup(managedArtworkFiles, JSON.parse(new TextDecoder().decode(managedArtworkFiles['manifest.json'])));
 const zip = packBackup(original, JSON.parse(new TextDecoder().decode(original['manifest.json'])));
 
 before(async () => {
@@ -42,6 +48,7 @@ before(async () => {
   await writeFile('private_dumps/web-tests/first.bin', original['mbrec.bin']);
   await writeFile('private_dumps/web-tests/second.bin', original['brec0.bin']);
   await writeFile('private_dumps/web-tests/artwork.zip', artworkZip);
+  await writeFile('private_dumps/web-tests/managed-artwork.zip', managedArtworkZip);
   await writeFile('private_dumps/web-tests/artwork-lfi.bin', artworkFiles['lfi.bin']);
   const pictures = spawnSync('python', ['-c', `
 from PIL import Image, ImageCms
@@ -403,6 +410,7 @@ test('incomplete dump remains downloadable and an unverified mapping requires th
   assert.match(backupMessage, /Bootkopie 1: bad brec checksum/);
   assert.match(backupMessage, /Bootkopie 2: gültig/);
   assert.ok((await page.evaluate(() => window.__saved))[0] > profile.lfi_size);
+  await page.locator('#restore-backup').uncheck();
   await page.locator('#backup-file').setInputFiles('private_dumps/web-tests/synthetic.x6backup.zip');
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Sicherung ist vollständig.');
   await page.locator('#restore').click();
@@ -457,7 +465,7 @@ test('verified boot mapping permits normal restore and requires complete readbac
   assert.equal(await page.locator('#confirm-go').isEnabled(), true);
   await page.locator('#confirm-go').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vollständig zurückgeschrieben und verifiziert.');
-  assert.deepEqual(await page.evaluate(() => window.__calls), ['driver', 'mbrec', 'brec', 'lfi', 'final', 'read', 'boot0', 'boot1', 'reset']);
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['read', 'boot0', 'boot1', 'save', 'driver', 'mbrec', 'brec', 'lfi', 'final', 'read', 'boot0', 'boot1', 'reset']);
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -490,6 +498,7 @@ async function replaceArtwork(page, slot = 'startup', apply = true) {
   await page.locator('#artwork-crop').waitFor({state: 'visible'});
   await page.locator('#crop-rotate').click();
   await page.locator(apply ? '#crop-apply' : '#crop-cancel').click();
+  await page.locator('#artwork-crop').waitFor({state: 'hidden'});
 }
 
 test('artwork gallery is offline, has 14 fixed slots, cancel/reset and protects unsaved edits', async () => {
@@ -541,35 +550,30 @@ test('artwork saves/reopens paired BINs and complete package without hardware; s
   await context.close();
 });
 
-test('screensaver patch is opt-in, preserves picture edits and cannot run twice', async () => {
+test('obsolete screensaver patch unavailable; black protected in legacy firmware', async () => {
   const fixture = await patchFixture();
   await writeFile('private_dumps/web-tests/optional-screensaver.bin', fixture.versions.install);
   const {page, context, errors, apiCalls} = await pageFixture(true, artworkFiles, fixture.profile);
   await page.route('**/tools/x6_artwork.json', route => route.fulfill({json: fixture.config}));
   await page.reload(); await openArtwork(page, 'optional-screensaver.bin');
-  await page.locator('[data-slot="background-02"]').click();
-  assert.match(await page.locator('#artwork-screensaver-info').textContent(), /empfehlen/);
+  await page.locator('[data-slot="background-01"]').click();
+  assert.match(await page.locator('#artwork-screensaver-info').textContent(), /ungeklärt/);
+  assert.equal(await page.locator('#artwork-screensaver').isVisible(), false);
+  for (const id of ['artwork-replace', 'artwork-edit', 'artwork-reset', 'artwork-delete', 'artwork-add']) {
+    assert.equal(await page.locator('#' + id).isDisabled(), true);
+  }
   assert.equal(await page.locator('#artwork-save').isDisabled(), true);
-  assert.equal(await page.locator('#artwork-screensaver').isEnabled(), true);
   await replaceArtwork(page, 'shutdown');
-  await page.locator('#artwork-screensaver').click();
-  await page.waitForFunction(() => document.querySelector('#artwork-screensaver').textContent === 'Screensaver bereits aktuell');
-  assert.equal(await page.locator('#artwork-screensaver').isDisabled(), true);
-  assert.equal(await page.locator('[data-slot="shutdown"]').evaluate(element => element.classList.contains('changed')), true);
   assert.equal(await page.locator('#artwork-save').isEnabled(), true);
   assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
   await context.close();
 });
 
 test('contour editor previews exported pixels through rotation, apply, cancel and both resets', async () => {
-  const {page, context, errors, apiCalls} = await pageFixture(true, artworkFiles, artworkData.profile);
-  const config = JSON.parse(JSON.stringify(artworkConfig));
-  const entry = validateLfi(artworkFiles['lfi.bin'], artworkData.profile).get('T0000003.BIN');
-  config.screensaver.supported_code = {'T0000003.BIN': await sha256(artworkFiles['lfi.bin'].subarray(entry.offset, entry.offset + entry.size))};
-  await page.route('**/tools/x6_artwork.json', route => route.fulfill({json: config}));
-  await page.reload(); await openArtwork(page);
+  const {page, context, errors, apiCalls} = await pageFixture(true, managedArtworkFiles, managedArtworkData.profile);
+  await openArtwork(page, 'managed-artwork.zip');
   assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
-  await replaceArtwork(page, 'background-01', false);
+  await replaceArtwork(page, 'background-02', false);
   assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
   await page.locator('#artwork-edit').click();
   const crop = async () => page.evaluate(() => [...document.getElementById('crop-preview').getContext('2d').getImageData(0, 0, 240, 320).data]);
@@ -582,10 +586,12 @@ test('contour editor previews exported pixels through rotation, apply, cancel an
   await page.locator('#crop-apply').click();
   const result = await page.evaluate(() => [...document.getElementById('artwork-preview').getContext('2d').getImageData(0, 0, 240, 320).data]);
   assert.deepEqual(result, initial);
-  assert.equal(await page.locator('.artwork-tile.changed').count(), 1);
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
+  await replaceArtwork(page, 'background-02');
   await page.locator('#artwork-reset').click();
-  // Reset processes immutable original pixels; original white needs the gradient.
-  assert.equal(await page.locator('.artwork-tile.changed').count(), 1);
+  // Reset processes the immutable source again without accumulating darkness.
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
+  await replaceArtwork(page, 'background-02');
   await page.locator('#artwork-save').click();
   await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Bearbeitete BINs gespeichert.');
   const reopened = await page.evaluate(async () => {
@@ -595,11 +601,57 @@ test('contour editor previews exported pixels through rotation, apply, cancel an
     const config = await (await fetch('./tools/x6_artwork.json')).json();
     const file = await window.__handles['x6-bilder-lfi.bin'].getFile();
     const model = await Artwork.create(await selectImages([file], profile), profile, config);
-    const before = [...model.pixels('background-01')];
-    model.reset('background-01');
-    return {contour: model.contour, unchanged: before.every((v, i) => v === model.pixels('background-01')[i]), edits: model.edits.size};
+    const before = [...model.pixels('background-02')];
+    model.reset('background-02');
+    return {contour: model.contour, unchanged: before.every((v, i) => v === model.pixels('background-02')[i]), edits: model.edits.size};
   });
   assert.deepEqual(reopened, {contour: true, unchanged: true, edits: 0});
+  assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('managed artwork adds after Apply only, deletes custom slots and reopens exported catalogue', async () => {
+  const {page, context, errors, apiCalls} = await pageFixture(true, managedArtworkFiles, managedArtworkData.profile);
+  await openArtwork(page, 'managed-artwork.zip');
+  assert.match(await page.locator('#artwork-capacity').textContent(), /Bytes frei/);
+  assert.equal(await page.locator('#artwork-add').isEnabled(), true);
+  const add = async apply => {
+    await page.locator('#artwork-add-picture').setInputFiles('private_dumps/web-tests/color.webp');
+    await page.locator('#artwork-crop').waitFor({state: 'visible'});
+    await page.locator(apply ? '#crop-apply' : '#crop-cancel').click();
+    await page.locator('#artwork-crop').waitFor({state: 'hidden'});
+  };
+  await add(false);
+  assert.equal(await page.locator('.artwork-tile').count(), 14);
+  await add(true);
+  assert.equal(await page.locator('.artwork-tile').count(), 15);
+  assert.equal(await page.locator('#artwork-delete').isEnabled(), true);
+  await replaceArtwork(page, 'background-12');
+  await page.locator('#artwork-reset').click();
+  assert.equal(await page.locator('.artwork-tile.changed').count(), 0);
+  await add(true);
+  assert.equal(await page.locator('.artwork-tile').count(), 16);
+  await page.locator('[data-slot="background-12"]').click();
+  await page.locator('#artwork-delete').click();
+  await page.locator('#confirmation button[value=cancel]').click();
+  assert.equal(await page.locator('.artwork-tile').count(), 16);
+  await page.locator('#artwork-delete').click();
+  await page.locator('#confirm-go').click();
+  await page.waitForFunction(() => document.querySelectorAll('.artwork-tile').length === 15);
+  assert.equal(await page.locator('[data-slot="background-13"]').count(), 0);
+  await page.locator('#artwork-save').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Bearbeitete BINs gespeichert.');
+  const state = await page.evaluate(async () => {
+    const {selectImages} = await import('./lib/images.js');
+    const {Artwork} = await import('./lib/artwork.js');
+    const profile = await (await fetch('./tools/x6_profile.json')).json();
+    const config = await (await fetch('./tools/x6_artwork.json')).json();
+    const file = await window.__handles['x6-bilder-lfi.bin'].getFile();
+    const model = await Artwork.create(await selectImages([file], profile), profile, config);
+    return {count: model.storage.count, custom: model.ranges.get('background-12').slot.custom,
+      black: model.ranges.get('background-01').slot.fixed_black, patch: model.patchedLfi};
+  });
+  assert.deepEqual(state, {count: 12, custom: true, black: true, patch: null});
   assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
   await context.close();
 });
@@ -673,5 +725,64 @@ test('browser import applies EXIF, alpha and sRGB; accepts both WebP codecs and 
   assert.deepEqual(results['lossy.webp'].size, [3, 2]);
   assert.match(results['animated.png'].error, /Animierte/); assert.match(results['broken.png'].error, /gültiges/);
   assert.deepEqual(apiCalls, []); assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('recovery is available offline, element IDs are unique and restore backup shares the main choice', async () => {
+  const {page, context, errors, apiCalls} = await pageFixture();
+  const duplicates = await page.evaluate(() => {
+    const ids = [...document.querySelectorAll('[id]')].map(element => element.id);
+    return ids.filter((id, index) => ids.indexOf(id) !== index);
+  });
+  assert.deepEqual(duplicates, []);
+  await page.locator('#recovery-help summary').click();
+  assert.match(await page.locator('#recovery-help').textContent(), /Power UND Reset/);
+  assert.match(await page.locator('#recovery-help').textContent(), /10D6:10D6/);
+  assert.ok(!apiCalls.some(path => ['/api/status', '/api/enter-adfu'].includes(path)));
+  assert.equal(await page.locator('#restore-backup').isChecked(), true);
+  await page.locator('#restore-backup').uncheck();
+  assert.equal(await page.locator('#flash-backup').isChecked(), false);
+  assert.equal(await page.locator('#artwork-backup').isChecked(), false);
+  await page.locator('#flash-backup').check();
+  assert.equal(await page.locator('#restore-backup').isChecked(), true);
+  assert.equal(await page.locator('#artwork-screensaver').isHidden(), true);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('single selected region is saved as BIN with one paired read and no writes', async () => {
+  const {page, context, errors} = await pageFixture();
+  await connect(page);
+  assert.equal(await page.locator('#restart').textContent(), 'Player neustarten');
+  await page.locator('#dump-regions').click();
+  const choices = page.locator('#region-options input');
+  for (const choice of await choices.all()) await choice.uncheck();
+  assert.equal(await page.locator('#regions-save').isDisabled(), true);
+  await page.locator('#region-options input[value="mbrec_copy.bin"]').check();
+  await page.evaluate(() => {window.__calls = [];});
+  await page.locator('#regions-save').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Gewählte Bereiche gespeichert.');
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['boot1', 'save', 'reset']);
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.__handles)), ['mbrec_copy.bin']);
+  assert.deepEqual(await page.evaluate(() => window.__saved), [profile.mbrec_size]);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('unchecked full restore skips its save picker but retains full readback', async () => {
+  const {page, context, errors} = await pageFixture();
+  await connect(page);
+  await page.locator('#backup-file').setInputFiles('private_dumps/web-tests/synthetic.x6backup.zip');
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Sicherung ist vollständig.');
+  await page.locator('#restore-backup').uncheck();
+  await page.evaluate(() => {
+    window.__calls = [];
+    window.showSaveFilePicker = async () => {throw Error('Backup picker must not open');};
+  });
+  await page.locator('#restore').click();
+  await page.locator('#confirm-go').click();
+  await page.waitForFunction(() => document.querySelector('#activity-heading').textContent === 'Vollständig zurückgeschrieben und verifiziert.');
+  assert.deepEqual(await page.evaluate(() => window.__calls), ['driver', 'mbrec', 'brec', 'lfi', 'final', 'read', 'boot0', 'boot1', 'reset']);
+  assert.deepEqual(errors, []);
   await context.close();
 });

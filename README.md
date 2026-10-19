@@ -15,13 +15,22 @@ unserer WebUSB-Seite bereit.
 
 ## Funktionen
 
+**Lokaler Stand 0.3.0-beta.8:** zusätzliche Hintergrundbilder bei vorhandenem
+Katalog und freier Reserve, auswählbare Sicherungsbereiche, optionale
+Vorabsicherung auch bei Full Restore, Neustartknopf und Recovery-Hilfe.
+Noch nicht veröffentlicht. Der seitliche Bildwechsel im angepassten Screensaver
+bleibt ein bekannter Gerätefehler; dessen Codepatch-Funktionen sind deaktiviert.
+
 | Funktion | Ablauf |
 | --- | --- |
 | Sicherung erstellen | MBREC, MBREC-Kopie, BREC 0, BREC 1 und vollständiges LFI als kompatibles `.x6backup.zip` speichern. |
+| Bereiche sichern | Einzelne der fünf Komponenten auswählen; erfolgreicher Einzelbereich als BIN, mehrere als geprüftes Teilpaket. |
 | Sicherung wiederherstellen | ZIP oder Toolkit-Ordner prüfen, MBREC → BREC → LFI schreiben, abschließen und alle fünf Dateien zurücklesen. |
 | Auswahl flashen | MBREC, BREC und LFI am Inhalt erkennen: einzeln, beliebig kombiniert oder als vollständiges ZIP-Paket. Backup per Checkbox optional (voreingestellt an), danach vollständig zurücklesen. |
 | Mit Gerät vergleichen | Alle ausgewählten Bereiche byteweise vergleichen, bei BREC beide Kopien. Beschädigtes Geräte-LFI bleibt vergleichbar. |
 | ADFU betreten / verlassen | Den Wartungsmodus direkt in der App wechseln; Erfolg erst nach erkannter USB-Anmeldung melden. |
+| Player neustarten | Vorhandenen ADFU-/Resetpfad verwenden und normale USB-Anmeldung prüfen. |
+| Recovery-Hilfe | Bestätigte Power-/Reset-Sequenz bei Bootschleife, auch ohne Geräteverbindung erreichbar. |
 | Player ausschalten | Eigenen RAM-Code laden und zurücklesen. Nach Startbestätigung USB abziehen; der Code wartet darauf. |
 | Bilder bearbeiten | 11 Hintergründe, Startbild, Ausschaltbild und frühes BREC-Startbild ersetzen, zuschneiden und vergleichen. Geänderte BINs/Pakete lokal speichern oder genau die geänderten Bereiche flashen. |
 
@@ -59,10 +68,14 @@ beim ADFU-Wechsel die App über **Als Administrator ausführen** starten.
 
 ## Bildeditor
 
-**Bilder bearbeiten** öffnet die Galerie der 14 festen Bildplätze. LFI/BREC oder
+**Bilder bearbeiten** öffnet die Galerie der Standardplätze und vorhandener Zusatzbilder. LFI/BREC oder
 eine eigene Sicherung laden, ein Bild ersetzen und den Ausschnitt wählen. PNG,
 JPEG und WebP werden auf 240 × 320 RGB565 umgewandelt. Die Startbilder in LFI und
-BREC sind standardmäßig gekoppelt. Keine zusätzlichen Bildplätze, kein Löschen.
+BREC sind standardmäßig gekoppelt. Schwarz bleibt gesperrt; die zehn weiteren
+Standardhintergründe können nur ersetzt werden. Zusätzliche Bilder sind bei
+passendem Katalog und ausdrücklich zugeordneter Nullreserve hinzufügbar,
+ersetzbar und löschbar. Speicherplatz und Kapazität stehen im Editor.
+Es wird kein Screensaver-Code installiert oder aktualisiert.
 
 Bearbeitung und Speichern sind offline möglich. **Vom Gerät laden** und
 **Änderungen flashen** greifen erst nach ausdrücklicher Auswahl auf den Player zu.
@@ -134,16 +147,18 @@ dieses Profil.
 - **Nicht enthalten:** Gerätefirmware, modifizierte Images, Dumps, private
   Sicherungen, Serienkennungen und Reverse-Engineering-Unterlagen.
 
-**v0.3.0-beta.7 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
-Die Sicherung vor dem Flashen ist in Windows und Web per Checkbox optional,
-auch im Bildeditor. Ohne Sicherung entfallen vollständiger Vorabdump und
-Speicherdialog; Geräteheader, Bootgeometrie und vollständiges Rücklesen bleiben
-geprüft. Die Windows-Statusanzeige wartet ohne laufende Animation.
-Windows und Web bieten das Nachrüsten bzw. Aktualisieren des Bildschirmschoners
-auf v7 ausdrücklich als Option an. Bereits aktueller Code wird unabhängig von
-den Hintergrundpixeln erkannt; Hello-X6-Varianten behalten ihren Launcher.
-Der dezente Verlauf wird bei unterstützter Firmware automatisch auf neue
-Hintergrundmotive angewendet. Platz 0 bleibt bei v7 fest schwarz.
+**v0.3.0-beta.8 ist ein lokaler, auf Hardware unverifizierter Build-Kandidat.**
+Die Sicherung vor dem Schreiben ist in Windows und Web per Checkbox optional,
+auch beim Full Restore und im Bildeditor. Ohne Sicherung entfallen Vorabdump
+und Speicherdialog; Imageprüfung und gewählte Rückleseprüfung bleiben erhalten.
+Einzelne Firmwarebereiche lassen sich getrennt sichern. Die Windows-Statusanzeige
+wartet ohne laufende Animation; Recovery-Hilfe ist auch offline erreichbar.
+Screensaver-Nachrüstung und -Aktualisierung sind deaktiviert. Der seitliche
+Bildwechsel bleibt ein ungelöster Gerätefehler. Die Bildverwaltung bearbeitet
+ausschließlich Ressourcen: Schwarz bleibt geschützt, zehn Standardmotive sind
+ersetzbar, zusätzliche Motive benötigen einen unterstützten Katalog und genug
+Reserve in X6FREE.BIN. Neue Motive erhalten den dezenten Verlauf; der Editor
+verändert keinen Screensaver-Code.
 
 Zusätzlich prüfen Import, Export und Schreibvorbereitung die vollständige
 LFI-Sektorzuordnung. Lücken werden als Nullpadding zugeordnet, ohne benannte

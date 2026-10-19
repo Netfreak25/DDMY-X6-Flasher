@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "bitmap_pixels_start": 8192,
+  "config_value_offset": 128,
+  "dictionary_sizes": {"DICNEC.DIC": 307712, "DICNXEC.DIC": 512, "DICSYEC.DIC": 512},
+  "files": ["COMMON.STY", "USER2.AP", "CONFIG.BIN", "DICNEC.DIC", "USER4.AP", "DICNXEC.DIC", "DICSYEC.DIC"],
+  "physical_files": ["USER2.AP", "COMMON.STY", "DICNEC.DIC", "CONFIG.BIN", "USER4.AP", "DICSYEC.DIC", "DICNXEC.DIC"],
+  "added_pixels": [4660, 48879]
+}

@@ -21,7 +21,7 @@ def limits(profile: toolkit.Profile) -> dict[str, int]:
             "brec0.bin": profile.brec_size, "brec1.bin": profile.brec_size}
 
 
-def import_backup(source: Path, target: Path, profile: toolkit.Profile) -> dict:
+def import_backup(source: Path, target: Path, profile: toolkit.Profile, *, allow_partial: bool = False) -> dict:
     """Copy a ZIP or legacy folder into a new private folder, then validate it."""
     toolkit.private_path(target).mkdir(parents=True, exist_ok=False)
     allowed = limits(profile)
@@ -53,7 +53,9 @@ def import_backup(source: Path, target: Path, profile: toolkit.Profile) -> dict:
         except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as error:
             raise toolkit.ToolkitError(f"Ungültiges Sicherungsarchiv: {error}") from error
     # Authenticate the imported hashes before changing any staged bytes.
-    manifest = toolkit.verify_bundle(target, profile, allow_padding=True)
+    manifest = toolkit.verify_bundle(target, profile, allow_padding=True, allow_partial=allow_partial)
+    if "lfi.bin" not in manifest["files"]:
+        return toolkit.verify_bundle(target, profile, allow_partial=allow_partial)
     changes = []
     source = (target / "lfi.bin").read_bytes()
     result = x6_lfi.normalize_lfi(source, changes)
@@ -66,7 +68,7 @@ def import_backup(source: Path, target: Path, profile: toolkit.Profile) -> dict:
         manifest["lfi_normalization"] = {"source_sha256": previous, "changes": changes}
         manifest.update(hardware_verified=False, kind="firmware_candidate")
         toolkit.write_manifest(target, manifest)
-    return toolkit.verify_bundle(target, profile)
+    return toolkit.verify_bundle(target, profile, allow_partial=allow_partial)
 
 
 def stage_lfi(source: Path, target: Path, profile: toolkit.Profile) -> list[dict]:
