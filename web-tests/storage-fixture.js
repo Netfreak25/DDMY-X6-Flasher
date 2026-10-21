@@ -1,11 +1,12 @@
 /** Synthetic firmware bytes from the same fixture specification as Python. */
 import spec from '../tests/storage_fixture.json' with {type: 'json'};
-import {STORAGE} from '../lib/storage.js';
-import {LFI, view, wordSum} from '../lib/formats.js';
+import {STORAGE, removeDictionaries, repack} from '../lib/storage.js';
+import {LFI, view, wordSum, validateLfi} from '../lib/formats.js';
 
 export function storageFixture() {
   const common = new Uint8Array(STORAGE.common_base_size), commonView = view(common);
   commonView.setUint32(0, STORAGE.sty_magic, true);
+  commonView.setUint32(0x10, STORAGE.bitmap_table, true);
   commonView.setUint16(STORAGE.bitmap_count_offset, STORAGE.bitmap_base + STORAGE.standard_count, true);
   const offsets = [0];
   for (let index = 0; index < STORAGE.standard_count; index++) {
@@ -51,4 +52,26 @@ export function pixels(value) {
   const raw = new Uint8Array(STORAGE.pixel_bytes), input = view(raw);
   for (let index = 0; index < raw.length; index += 2) input.setUint16(index, value, true);
   return raw;
+}
+
+/** Independently assembled v2 fixture with two roles sharing one immutable ID. */
+export function skinFixture(roleCount = 2) {
+  const original = storageFixture(), profile = original.profile, image = removeDictionaries(original.image, profile);
+  const entry = validateLfi(image, profile).get('COMMON.STY'), source = image.subarray(entry.offset, entry.offset + entry.size);
+  const oldCount = view(source).getUint16(20, true), table = source.length, pixelOffset = table + (oldCount + 1) * 16;
+  const extension = pixelOffset + 240 * 30 * 2, mapping = extension + 32, size = Math.ceil((mapping + roleCount * 16) / 512) * 512;
+  const common = new Uint8Array(size), header = view(common);
+  common.set(source); common.set(source.subarray(STORAGE.bitmap_table, STORAGE.bitmap_table + oldCount * 16), table);
+  for (let at = pixelOffset; at < extension; at += 2) header.setUint16(at, 0x2345, true);
+  const descriptor = table + oldCount * 16;
+  header.setUint32(descriptor, pixelOffset, true); header.setUint32(descriptor + 4, 240 * 30 * 2, true);
+  header.setUint16(descriptor + 8, 2, true); header.setUint16(descriptor + 10, 240, true); header.setUint16(descriptor + 12, 30, true);
+  header.setUint32(16, table, true); header.setUint16(20, oldCount + 1, true);
+  header.setUint16(68, 2, true); header.setUint32(72, size, true); header.setUint32(76, extension, true);
+  common.set(new TextEncoder().encode('X6SK'), extension);
+  header.setUint16(extension + 4, 1, true); header.setUint16(extension + 6, 32, true); header.setUint32(extension + 8, size, true);
+  header.setUint16(extension + 12, 8, true); header.setUint16(extension + 14, roleCount, true);
+  header.setUint32(extension + 16, mapping, true); header.setUint32(extension + 20, roleCount * 16, true);
+  for (let index = 0; index < roleCount * 8; index++) header.setUint16(mapping + index * 2, oldCount, true);
+  return {image: repack(image, {'COMMON.STY': common}, [], profile), profile};
 }

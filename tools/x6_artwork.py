@@ -78,18 +78,19 @@ def locate(components: dict[str, bytes], profile: tk.Profile, config: dict) -> d
             raw = data[entry.data_offset:entry.data_offset + entry.length]
             if len(raw) < sty["table_offset"] or lfi.u32(raw, 0) != sty["magic"]:
                 raise ValueError(f"Ungültige STY-Datei: {entry.name}")
-            count = lfi.u16(raw, sty["count_offset"])
-            table_end = sty["table_offset"] + count * sty["record_size"]
+            table, count = storage.bitmap_table(raw)
+            table_end = table + count * sty["record_size"]
             if slot["index"] >= count or table_end > len(raw):
                 raise ValueError("Bildtabelle ist unvollständig.")
             ranges = []
             for index in range(count):
-                pos = sty["table_offset"] + index * sty["record_size"]
+                pos = table + index * sty["record_size"]
                 offset, size = struct.unpack_from("<II", raw, pos)
-                if size and (offset < table_end or offset + size > len(raw)):
+                if size and (offset < sty["table_offset"] or offset + size > len(raw)
+                             or offset < table_end and table < offset + size):
                     raise ValueError("Bildbereich liegt außerhalb der STY-Datei.")
                 ranges.append((offset, offset + size))
-            pos = sty["table_offset"] + slot["index"] * sty["record_size"]
+            pos = table + slot["index"] * sty["record_size"]
             offset, size, fmt, width, height = struct.unpack_from("<IIHHH", raw, pos)
             if (size, fmt, width, height) != (config["pixel_bytes"], sty["format"], config["width"], config["height"]):
                 raise ValueError(f"Unbekanntes Bildformat: {slot['id']}")

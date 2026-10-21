@@ -128,6 +128,34 @@ Beschädigte Prüfsummen, überlappende Dateien oder ungültige Adressen werden
 abgewiesen: Daraus lässt sich der beabsichtigte Inhalt nicht rekonstruieren.
 Gespeicherte Gerätedumps bleiben unveränderte Messdaten.
 
+### Saisonale Firmware mit geschütztem gemeinsamen Bildbereich
+
+Der separate Skin-Quellzweig unterstützt zusätzlich **X6SC Version 2** in
+`COMMON.STY`. Header- und Skinbilder, Sprachdaten und native Tabellen liegen
+in einem geschützten Präfix. Eigene Screensaverbilder liegen dahinter. Die
+Bildverwaltung zeigt die Skinbilder nicht als löschbare Screensaverplätze an.
+
+Beide Implementierungen folgen dem tatsächlichen Bitmaptabellen-Verweis im
+Style-Header. Sie unterstützen X6SC v1/v2 und X6SK v1/v2; unbekannte Versionen
+werden abgewiesen. X6SK v2 enthält acht Zustände mit bis zu 512 Rollen und
+acht RGB565-Farben je Zustand. Die 512 Rollen sind keine Freigabe für beliebig
+viele Bitmaps: normale gemeinsame IDs bleiben unter `0x1000`; die unabhängigen
+Screensaver-IDs `0x9000..0x90ff` bleiben reserviert.
+
+Die Editorprüfung schützt auch identische, gemeinsam verwendete Skinbilder.
+Rollen dürfen keine veränderlichen Screensaverpixel als Alias verwenden.
+Hinzufügen, Ersetzen und Löschen ändern nur den editierbaren Anhang und seine
+Katalogeinträge; der übrige Präfix bleibt bytegleich. Hinzufügen und direktes
+Löschen stellen das gesamte Ausgangs-LFI einschließlich Dateibelegung wieder
+her. Der Import benötigt weiterhin 153.600 Bytes freie Nullreserve pro Motiv.
+
+Diese Unterstützung ist zunächst ein **unveröffentlichter Quellstand**. Die
+hier dokumentierten Änderungen installieren oder aktualisieren keine EXE.
+33 gezielte Python- und 18 JavaScript-Tests bestanden, darunter v1/v2-Leser,
+512 Rollen, Ablehnung von 513 Rollen, ungültige Grenzen und übereinstimmende
+Bildeditor-Ergebnisse. Die abschließende Prüfung am vollständigen Skin-Image
+wird zusätzlich im Firmware-Gesamtbericht festgehalten.
+
 ## Speichern
 
 **Geänderte BINs speichern** exportiert genau die geänderten Firmwarebereiche.
@@ -164,7 +192,8 @@ keine für den NAND-Treiber vorab veränderten Transportdateien.
 Bildänderungen betreffen die ausgewählten Pixelbereiche und Prüfsummen;
 ein ausdrücklich gewähltes Screensaver-Upgrade ergänzt dessen Code und Katalog.
 Eine nötige Padding-Korrektur aktualisiert außerdem die LFI-Dateilängen.
-Alle vorhandenen Dateiprüfsummen werden geprüft (im aktuellen Kandidaten 148).
+Alle vorhandenen Dateiprüfsummen werden geprüft; die Dateianzahl wird aus dem
+jeweiligen Image gelesen (145 in der gepinnten Skin-Basis vom 21.10.2026).
 Ein unbestätigter
 Schreibbefehl stoppt ohne automatische Wiederholung. Neustart erst nach
 erfolgreichem Rücklesen. Browser und Windows-App teilen die bestehende Gerätesperre.

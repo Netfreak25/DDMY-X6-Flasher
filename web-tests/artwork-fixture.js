@@ -23,6 +23,7 @@ export async function artworkFixture(size = 3 * 1024 * 1024, managed = false) {
       content = new Uint8Array(tableEnd + slots.length * config.pixel_bytes);
       const table = view(content);
       table.setUint32(0, config.sty.magic, true); table.setUint16(20, count, true);
+      table.setUint32(0x10, config.sty.table_offset, true);
       slots.forEach((slot, nth) => {
         const pos = 1024 + slot.index * 16;
         table.setUint32(pos, tableEnd + nth * config.pixel_bytes, true); table.setUint32(pos + 4, config.pixel_bytes, true);

@@ -23,6 +23,7 @@ def fixture():
     layout = storage.LAYOUT
     common = bytearray(layout["common_base_size"])
     struct.pack_into("<I", common, 0, layout["sty_magic"])
+    struct.pack_into("<I", common, 0x10, layout["bitmap_table"])
     count = layout["bitmap_base"] + layout["standard_count"]
     struct.pack_into("<H", common, layout["bitmap_count_offset"], count)
     offsets = [0]

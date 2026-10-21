@@ -17,6 +17,72 @@ import x6_lfi as lfi
 # the extraction root. Keep the source and packaged paths explicit.
 PROFILE_DIRECTORY = Path(sys._MEIPASS) / "tools" if getattr(sys, "frozen", False) else Path(__file__).parent
 LAYOUT = json.loads((PROFILE_DIRECTORY / "x6_storage.json").read_text(encoding="utf-8"))
+SKIN_LAYOUT = struct.Struct("<4sHHIHHIIII")
+SKIN_PALETTE_HEADER_BYTES = 40
+SKIN_PALETTE_BYTES = 128
+SKIN_COUNT = 8
+MAX_SKIN_ROLES = 512
+NATIVE_BITMAP_LIMIT = 0x1000
+BITMAP_TABLE_POINTER = 0x10
+
+
+def bitmap_table(raw: bytes) -> tuple[int, int]:
+    """Follow the native header pointer, including tables relocated after pixels."""
+    if len(raw) < LAYOUT["catalog_end"] or lfi.u32(raw, 0) != LAYOUT["sty_magic"]:
+        raise ValueError("Ungültige STY-Datei.")
+    table, count = lfi.u32(raw, BITMAP_TABLE_POINTER), lfi.u16(raw, LAYOUT["bitmap_count_offset"])
+    if table < LAYOUT["catalog_end"] or table % 4 or table + count * LAYOUT["bitmap_record"] > len(raw):
+        raise ValueError("Bildtabelle ist unvollständig.")
+    return table, count
+
+
+def _overlap(first, second):
+    return first[0] < second[1] and second[0] < first[1]
+
+
+def _skin_layout(raw: bytes, extension: int, count: int) -> dict:
+    """Independent v2 parser: protect metadata and immutable skin pixel aliases."""
+    if extension < LAYOUT["catalog_end"] or extension % 4 or extension + SKIN_LAYOUT.size > len(raw):
+        raise ValueError("Ungültiger Skin-Metadatenverweis.")
+    magic, version, size, prefix, skins, roles, mapping, map_bytes, flags, reserved = SKIN_LAYOUT.unpack_from(raw, extension)
+    expected_size = {1: SKIN_LAYOUT.size, 2: SKIN_PALETTE_HEADER_BYTES}.get(version)
+    if (magic != b"X6SK" or size != expected_size or flags or reserved
+            or skins != SKIN_COUNT or not 1 <= roles <= MAX_SKIN_ROLES or map_bytes != skins * roles * 2
+            or prefix % LAYOUT["sector_size"] or extension + size > prefix
+            or prefix + (count - LAYOUT["standard_count"]) * LAYOUT["pixel_bytes"] != len(raw)
+            or mapping < extension + size or mapping % 2 or mapping + map_bytes > prefix):
+        raise ValueError("Ungültiger Skin-Grundbereich.")
+    table, bitmap_count = bitmap_table(raw)
+    table_span = (table, table + bitmap_count * LAYOUT["bitmap_record"])
+    protected = [(extension, extension + size), (mapping, mapping + map_bytes)]
+    palette_offset = palette_bytes = 0
+    if version == 2:
+        palette_offset, palette_bytes = struct.unpack_from("<II", raw, extension + SKIN_LAYOUT.size)
+        if (palette_bytes != SKIN_PALETTE_BYTES or palette_offset % 2
+                or palette_offset < mapping + map_bytes or palette_offset + palette_bytes > prefix):
+            raise ValueError("Ungültige geschützte Skin-Farbtabelle.")
+        protected.append((palette_offset, palette_offset + palette_bytes))
+    if bitmap_count > NATIVE_BITMAP_LIMIT or table_span[1] > prefix or any(_overlap(table_span, span) for span in protected):
+        raise ValueError("Skin-Bildtabelle überlappt Metadaten oder Zusatzbilder.")
+    ids = struct.unpack_from(f"<{skins * roles}H", raw, mapping)
+    standard = []
+    for index in range(LAYOUT["standard_count"]):
+        at = table + (LAYOUT["bitmap_base"] + index) * LAYOUT["bitmap_record"]
+        if at + LAYOUT["bitmap_record"] > table_span[1]:
+            raise ValueError("Standardbilder fehlen im Skin-Grundbereich.")
+        offset, length = struct.unpack_from("<II", raw, at)
+        standard.append((offset, offset + length))
+    for index in set(ids):
+        if index >= bitmap_count or index >= NATIVE_BITMAP_LIMIT:
+            raise ValueError("Skin-Bild-ID liegt außerhalb der nativen Tabelle.")
+        at = table + index * LAYOUT["bitmap_record"]
+        offset, length, fmt, width, height = struct.unpack_from("<IIHHH", raw, at)
+        if (fmt != LAYOUT["bitmap_format"] or not width or not height or length != width * height * 2
+                or any(_overlap((offset, offset + length), span) for span in standard)):
+            raise ValueError("Skin-Bild teilt einen editierbaren Bildbereich oder hat ein falsches Format.")
+    return {"prefix_bytes": prefix, "protected": protected, "skin_ids": sorted(set(ids)),
+            "extension_offset": extension, "role_count": roles, "layout_version": version,
+            "palette_offset": palette_offset, "palette_bytes": palette_bytes}
 
 
 def _profile_value(profile, name: str) -> int:
@@ -75,37 +141,41 @@ def inspect_storage(image: bytes, profile=None) -> dict:
     if len(raw) < end or lfi.u32(raw, 0) != LAYOUT["sty_magic"]:
         raise ValueError("Ungültige COMMON.STY für den Bilderkatalog.")
     _, version, count, size, flags = struct.unpack_from("<4sHHII", raw, header)
-    if (version != LAYOUT["catalog_version"] or flags or size != len(raw)
+    if (version not in (LAYOUT["catalog_version"], 2) or (version == 1 and flags) or size != len(raw)
             or not LAYOUT["standard_count"] <= count <= LAYOUT["maximum"]):
         raise ValueError("Ungültiger oder unbekannter Bilderkatalog.")
     if any(raw[table + count * 4:end]):
         raise ValueError("Reservierte Katalogbytes sind nicht null.")
     offsets = list(struct.unpack_from(f"<{count}I", raw, table))
-    expected_size = LAYOUT["common_base_size"] + (count - LAYOUT["standard_count"]) * LAYOUT["pixel_bytes"]
+    skin = _skin_layout(raw, flags, count) if version == 2 else None
+    base_size = skin["prefix_bytes"] if skin else LAYOUT["common_base_size"]
+    expected_size = base_size + (count - LAYOUT["standard_count"]) * LAYOUT["pixel_bytes"]
     if len(raw) != expected_size:
         raise ValueError("Unbekannter Zusatzbereich von COMMON.STY.")
-    bitmap_count = lfi.u16(raw, LAYOUT["bitmap_count_offset"])
-    table_end = LAYOUT["bitmap_table"] + bitmap_count * LAYOUT["bitmap_record"]
-    if bitmap_count < LAYOUT["bitmap_base"] + LAYOUT["standard_count"] or table_end > LAYOUT["common_base_size"]:
+    bitmap_start, bitmap_count = bitmap_table(raw)
+    table_end = bitmap_start + bitmap_count * LAYOUT["bitmap_record"]
+    protected = [(bitmap_start, table_end), *(skin["protected"] if skin else [])]
+    if bitmap_count < LAYOUT["bitmap_base"] + LAYOUT["standard_count"] or table_end > base_size:
         raise ValueError("Unbekannte Standard-Bildtabelle.")
     for index in range(bitmap_count):
-        at = LAYOUT["bitmap_table"] + index * LAYOUT["bitmap_record"]
+        at = bitmap_start + index * LAYOUT["bitmap_record"]
         offset, length = struct.unpack_from("<II", raw, at)
-        if length and (offset < table_end or offset + length > LAYOUT["common_base_size"]):
+        if length and (offset < LAYOUT["catalog_end"] or offset % 2 or offset + length > base_size
+                       or any(_overlap((offset, offset + length), span) for span in protected)):
             raise ValueError("Eine Standardressource greift in den verwalteten Zusatzbereich.")
     standard_offsets = []
     for index in range(LAYOUT["standard_count"]):
-        at = LAYOUT["bitmap_table"] + (LAYOUT["bitmap_base"] + index) * LAYOUT["bitmap_record"]
+        at = bitmap_start + (LAYOUT["bitmap_base"] + index) * LAYOUT["bitmap_record"]
         offset, length, fmt, width, height = struct.unpack_from("<IIHHH", raw, at)
         if ((length, fmt, width, height) != (LAYOUT["pixel_bytes"], LAYOUT["bitmap_format"], LAYOUT["width"], LAYOUT["height"])
-                or offset < table_end or offset % 2 or offset + length > LAYOUT["common_base_size"]):
+                or offset < LAYOUT["catalog_end"] or offset % 2 or offset + length > base_size):
             raise ValueError("Unbekannter Standard-Hintergrundbereich.")
         standard_offsets.append(offset)
-    expected = [0, *standard_offsets[1:]] + [LAYOUT["common_base_size"] + index * LAYOUT["pixel_bytes"]
+    expected = [0, *standard_offsets[1:]] + [base_size + index * LAYOUT["pixel_bytes"]
                                             for index in range(count - LAYOUT["standard_count"])]
     if offsets != expected:
         raise ValueError("Katalogoffsets entsprechen keinem verwalteten Bildlayout.")
-    previous = table_end
+    previous = LAYOUT["catalog_end"]
     for offset in sorted(standard_offsets):
         if offset < previous:
             raise ValueError("Überlappende Standard-Hintergründe.")
@@ -116,7 +186,8 @@ def inspect_storage(image: bytes, profile=None) -> dict:
     config_raw = _payload(image, config)
     if lfi.u16(config_raw, _config_offset(config_raw)) != count:
         raise ValueError("Bilderkatalog und konfigurierte Bildanzahl widersprechen sich.")
-    report.update(supported=True, reason="", count=count,
+    report.update(supported=True, reason="", count=count, catalog_version=version, prefix_bytes=base_size,
+                  skin=skin,
                   capacity=min(free // LAYOUT["pixel_bytes"], LAYOUT["maximum"] - count),
                   backgrounds=[{"index": index, "id": f"background-{index + 1:02d}", "offset": offset,
                                 "absolute_offset": common.data_offset + (standard_offsets[0] if index == 0 else offset),
@@ -193,11 +264,12 @@ def remove_dictionaries(image: bytes, profile=None) -> bytes:
 
 def _rewrite_backgrounds(image: bytes, extras: list[bytes], report: dict, profile) -> bytes:
     entries = _entries(image, profile)
-    common = bytearray(_payload(image, entries[LAYOUT["common_name"]])[:LAYOUT["common_base_size"]])
+    base_size = report["prefix_bytes"]
+    common = bytearray(_payload(image, entries[LAYOUT["common_name"]])[:base_size])
     for raw in extras:
         common.extend(raw)
     offsets = [item["offset"] for item in report["backgrounds"][:LAYOUT["standard_count"]]]
-    offsets += [LAYOUT["common_base_size"] + index * LAYOUT["pixel_bytes"] for index in range(len(extras))]
+    offsets += [base_size + index * LAYOUT["pixel_bytes"] for index in range(len(extras))]
     table, end = LAYOUT["catalog_table"], LAYOUT["catalog_end"]
     common[table:end] = bytes(end - table)
     struct.pack_into("<H", common, LAYOUT["catalog_offset"] + 6, len(offsets))

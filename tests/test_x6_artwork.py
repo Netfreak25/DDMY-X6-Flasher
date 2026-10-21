@@ -39,6 +39,7 @@ def fixture(managed=False):
             table_end = 1024 + count * 16
             content = bytearray(table_end + len(slots) * config["pixel_bytes"])
             struct.pack_into("<I", content, 0, config["sty"]["magic"])
+            struct.pack_into("<I", content, 0x10, config["sty"]["table_offset"])
             struct.pack_into("<H", content, 20, count)
             for nth, slot in enumerate(slots):
                 struct.pack_into("<IIHHH", content, 1024 + slot["index"] * 16,

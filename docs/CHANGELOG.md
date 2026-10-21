@@ -1,5 +1,21 @@
 # Änderungen
 
+## Skin-Quellzweig – unveröffentlicht, nicht installiert
+
+- X6SC-v2-Unterstützung mit geschütztem COMMON-Präfix und getrenntem
+  Screensaver-Anhang. Bestehende v1-Kataloge bleiben lesbar; unbekannte
+  Versionen und überlappende Bereiche werden abgewiesen.
+- Native Bitmaptabellen werden über ihren Headerverweis gelesen. Acht Skins,
+  bis zu 512 Rollen und die versionierten X6SK-Farbtabellen werden geprüft.
+  Gemeinsame Skinbilder erscheinen nicht als editierbare Screensaverplätze.
+- Hinzufügen, Ersetzen und Löschen wurden mit beiden echten Bildeditoren
+  gegen bytegleichen Präfix und vollständigen LFI-Rundlauf geprüft.
+- Abschließender Rundlauf am vollständigen saisonalen Firmware-Kandidaten v2:
+  Python und JavaScript erzeugen bytegleiche Ergebnisse; Löschen stellt das
+  ursprüngliche LFI vollständig wieder her. Geschützte Skinbilder bleiben erhalten.
+- 33 gezielte Python- und 18 JavaScript-Tests bestanden, keine übersprungen;
+  Ruff und ESLint bestanden. Keine Installation, kein Gerätezugriff, kein Flash.
+
 ## 0.3.0-beta.8 – lokal, unveröffentlicht
 
 - Screensaver-Einbau und -Aktualisierung in beiden Oberflächen deaktiviert.
